@@ -1,0 +1,25 @@
+# base.in — runtime dependencies for Miele System (Django/DRF)
+# Use with pip-compile to generate requirements.txt
+# Example:
+#   pip-compile --generate-hashes --output-file=requirements.txt base.in
+
+Django>=5.0,<6.0
+djangorestframework>=3.15,<3.16
+psycopg[binary]>=3.2,<4.0       # Postgres driver
+django-environ>=0.11,<1.0
+django-cors-headers>=4.4,<5.0
+djangorestframework-simplejwt>=5.3,<6.0
+django-filter>=24.2,<25.0
+django-ratelimit>=4.1,<5.0
+django-otp>=1.4,<2.0            # 2FA/TOTP (opcional no MVP; pode comentar se não for usar)
+celery>=5.4,<6.0
+redis>=5.0,<6.0
+sentry-sdk>=2.8,<3.0
+drf-spectacular>=0.27,<0.28
+gunicorn>=22.0,<24.0
+uvicorn[standard]>=0.30,<1.0    # ASGI worker (Gunicorn + Uvicorn workers em prod)
+django-prometheus>=2.3,<3.0     # opcional (métricas)
+django-templated-mail>=1.1,<2.0
+django-anymail>=11.0,<12.0
+django-storages>=1.14,<2.0
+boto3>=1.34,<2.0
