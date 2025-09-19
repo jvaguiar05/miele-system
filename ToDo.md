@@ -23,17 +23,17 @@
 
 **Objetivo:** Repositório utilizável por qualquer dev em 1 comando.
 
-- [ ] Estruturar `backend/` (core, apps base, common, api, scripts)
-- [ ] `pyproject.toml` (ruff, black, isort, mypy opcional), `Makefile` (up/migrate/test/lint/format)
-- [ ] `docker-compose.yml` (web, postgres, redis) + `Dockerfile` (prod-ready com gunicorn/uvicorn)
-- [ ] `core/settings/{base,dev,prod}.py` com 12‑Factor via `.env` (django-environ)
-- [ ] `common/observability/logging.py` (logs JSON) e Sentry (config, DSN via env)
-- [ ] CORS, CSRF (se web), SECURE\_\* (apenas em prod), DRF throttling global
-- [ ] Health endpoints: `/health/live` e `/health/ready`
-- [ ] `.env.example` completo (DB, Redis, JWT, S3, Email, Sentry)
-- [ ] Pre-commit (ruff/black/isort/mypy)
+- [x] Estruturar `backend/` (core, apps base, common, api, scripts)
+- [x] `requirements.txt` e `requirements.in`, `Makefile` (up/migrate/test/lint/format)
+- [x] `docker-compose.yml` (web, postgres, redis) + `Dockerfile` (prod-ready com gunicorn/uvicorn)
+- [x] `core/settings/{base,dev,prod}.py` com 12‑Factor via `.env` (django-environ)
+- [x] `common/observability/logging.py` (logs JSON) e Sentry (config, DSN via env)
+- [x] CORS, CSRF (se web), SECURE\_\* (apenas em prod), DRF throttling global
+- [x] Health endpoints: `/health/live` e `/health/ready`
+- [x] `.env.example` completo (DB, Redis, JWT, S3, Email, Sentry)
+- [x] Pre-commit (ruff/black/isort/mypy)
 
-**Entrega do dia:** Projeto sobe com `make up` (dev), health endpoints respondem OK.
+**Entrega do dia:** Projeto sobe com `make up` (dev), health endpoints respondem OK. Dockerfile builda.
 
 ---
 

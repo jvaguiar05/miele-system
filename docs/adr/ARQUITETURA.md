@@ -95,83 +95,88 @@
 > Tudo que consta aqui existirá no repositório.
 
 ```text
-backend/
-    manage.py
-    pyproject.toml
-    Makefile
-    docker-compose.yml
-    Dockerfile
-    .env.example
-    core/
-        asgi.py
-        wsgi.py
-        urls.py
-        middleware.py
-        settings/
-            base.py
-            dev.py
-            prod.py
-    common/
-        utils/
-            ids.py           # geração de UUID/correlation_id
-            time.py
-            validators.py
-        email/
-            sender.py        # abstração de envio (sync/async)
-            templates/       # base templates
-        storage/
-            files.py         # wrapper django-storages/local
-        audit/
-            models.py        # AuditLog
-            services.py      # gravação auditável
-        observability/
-            logging.py       # config de logs JSON
-            health.py        # checks utilitários
-        integrations/
-            cnpj_client.py   # BrasilAPI client + retries/cache
-    apps/
-        identity/
-            models.py
-            serializers.py
-            views.py
-            services.py      # RegisterUser, ApproveUser, Login, etc.
-            permissions.py
-            urls.py
-            tasks.py         # e-mails, etc. (Celery se habilitado)
-            tests/
-        clients/
-            models.py
-            serializers.py
-            views.py
-            services.py      # Create/Update + fluxo de aprovação
-            permissions.py
-            urls.py
-            tasks.py
-            tests/
-        perdcomps/
-            models.py
-            serializers.py
-            views.py
-            services.py
-            permissions.py
-            urls.py
-            tasks.py
-            tests/
-        admin_backoffice/
-            views.py         # endpoints do backoffice
-            services.py      # dashboards/consultas agregadas
-            urls.py
-            templates/       # (opcional) htmx/tailwind se usado
-            tests/
-    api/
-        routers.py         # include urls das apps por namespace
-        schemas/
-            spectacular.py   # config drf-spectacular
+miele-system/
+    .env.example                 # template de variáveis (raiz do repo)
+    Makefile                     # comandos de DX (lint/test/migrate/up)
+    requirements.txt             # gerado por pip-compile a partir de base.in
+    requirements-dev.txt         # gerado por pip-compile a partir de dev.in
+    base.in                      # deps runtime (fonte)
+    dev.in                       # deps de desenvolvimento (fonte)
+    docker-compose.yml           # serviços (web, db, redis) — raiz
+    Dockerfile                   # imagem da app — raiz
     docs/
-        adr/               # Architecture Decision Records
+        adr/                     # Architecture Decision Records
+        db/                      # database-related files
     scripts/
         load_demo_data.py
         cleanup_tmp.py
+    backend/
+        manage.py
+        core/
+            asgi.py
+            wsgi.py
+            urls.py
+            middleware.py
+            settings/
+                base.py
+                dev.py
+                prod.py
+        common/
+            utils/
+                ids.py
+                time.py
+                validators.py
+            email/
+                sender.py
+                templates/
+            storage/
+                files.py
+            audit/
+                models.py
+                services.py
+            observability/
+                logging.py
+                health.py
+            integrations/
+                cnpj_client.py
+        apps/
+            identity/
+                models.py
+                serializers.py
+                views.py
+                services.py
+                permissions.py
+                urls.py
+                tasks.py
+                tests/
+            clients/
+                models.py
+                serializers.py
+                views.py
+                services.py
+                permissions.py
+                urls.py
+                tasks.py
+                tests/
+            perdcomps/
+                models.py
+                serializers.py
+                views.py
+                services.py
+                permissions.py
+                urls.py
+                tasks.py
+                tests/
+            admin_backoffice/
+                views.py
+                services.py
+                urls.py
+                templates/
+                tests/
+        api/
+            routers.py
+            schemas/
+                spectacular.py
 ```
 
 ---

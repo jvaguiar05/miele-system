@@ -1,0 +1,18 @@
+# dev.in — development-only dependencies
+# Use with pip-compile to generate requirements-dev.txt
+# Example:
+#   pip-compile --generate-hashes --output-file=requirements-dev.txt dev.in
+
+# Pull in runtime deps as a base
+-r base.in
+
+# Testing
+pytest>=8.2,<9.0
+pytest-django>=4.8,<5.0
+model-bakery>=1.17,<2.0   # ou factory_boy
+
+# Typings (opcional)
+types-requests>=2.32,<3.0
+
+# Tooling
+pip-tools>=7.4,<8.0
