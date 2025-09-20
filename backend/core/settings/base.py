@@ -58,6 +58,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "core.middleware.FailedLoginTrackingMiddleware",  # Track failed logins
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.middleware.CorrelationIdMiddleware",
@@ -107,6 +108,9 @@ MEDIA_ROOT = str(BASE_DIR / "media")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Custom User Model
+AUTH_USER_MODEL = "identity.User"
+
 # Django REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -128,8 +132,16 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "100/min",
-        "user": "1000/min",
+        "anon": "10/minute",
+        "user": "100/minute",
+        # Auth-specific throttling
+        "auth_login": "5/min",
+        "auth_register": "3/hour",
+        "auth_password_reset": "2/hour",
+        "auth_refresh": "30/hour",
+        "auth_per_user": "20/min",
+        "sensitive_action": "10/hour",
+        "failed_login": "5/min",
     },
 }
 
@@ -143,16 +155,43 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
 # drf-spectacular
 SPECTACULAR_SETTINGS = {
     "TITLE": "Miele System API",
-    "DESCRIPTION": "API-first backend for Miele System (Django/DRF)",
+    "DESCRIPTION": "Sistema de gestão empresarial com foco em Clientes e PER/DCOMPs. API REST completa com autenticação JWT, RBAC e recursos administrativos.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SECURITY": [{"BearerAuth": []}],
+    "TAGS": [
+        {
+            "name": "Identity - Auth",
+            "description": "Endpoints de autenticação e autorização",
+        },
+        {
+            "name": "Identity - Users",
+            "description": "Endpoints de gerenciamento de usuários",
+        },
+        {
+            "name": "Identity - Admin",
+            "description": "Endpoints administrativos (requer privilégios de admin)",
+        },
+    ],
+    "SWAGGER_UI_SETTINGS": {
+        "deepLinking": True,
+        "persistAuthorization": True,
+        "displayOperationId": False,
+        "defaultModelExpandDepth": 2,
+        "defaultModelsExpandDepth": 1,
+    },
+    "REDOC_SETTINGS": {
+        "LAZY_RENDERING": False,
+    },
 }
 
 # CORS

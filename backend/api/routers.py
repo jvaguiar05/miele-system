@@ -6,7 +6,7 @@ router = DefaultRouter()
 
 urlpatterns = [
     path("", include(router.urls)),
-    path("auth/", include("apps.identity.urls")),
+    path("identity/", include("apps.identity.urls")),
     path("clients/", include("apps.clients.urls")),
     path("perdcomps/", include("apps.perdcomps.urls")),
 ]

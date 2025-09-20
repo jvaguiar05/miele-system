@@ -43,6 +43,74 @@ Segundo [ESCOPO.md](./docs/adr/ESCOPO.md):
 
 ---
 
+## 🛠️ Comandos de Gerenciamento
+
+O sistema possui comandos Django personalizados para facilitar a configuração e administração:
+
+### 🔑 Criação de Superusuário com Roles
+
+```bash
+# Modo interativo (recomendado)
+python manage.py create_superuser_with_role
+
+# Modo não-interativo
+python manage.py create_superuser_with_role \
+    --username admin \
+    --email admin@miele.com \
+    --first-name "Admin" \
+    --last-name "System" \
+    --role admin \
+    --password "senha_segura" \
+    --no-input
+```
+
+**Opções disponíveis:**
+
+- `--username`: Nome de usuário
+- `--email`: Email do usuário
+- `--first-name`: Primeiro nome
+- `--last-name`: Sobrenome
+- `--role`: Role do usuário (`admin`, `employee`, `guest`)
+- `--password`: Senha (se não fornecida, será solicitada)
+- `--no-input`: Não solicitar entrada interativa
+
+### 🎭 Configuração de Roles e Permissões
+
+```bash
+# Configurar roles do sistema
+python manage.py setup_roles
+
+# Reset e reconfiguração completa
+python manage.py setup_roles --reset --verbose
+```
+
+**Roles criadas:**
+
+- **Admin**: Acesso completo ao sistema com privilégios administrativos
+- **Employee**: Acesso padrão para operações de negócio
+- **Guest**: Acesso limitado apenas para visualização de dados públicos
+
+### 🔄 Migração de Usuários Existentes
+
+```bash
+# Visualizar o que seria migrado
+python manage.py migrate_users --dry-run
+
+# Migrar usuários com role padrão
+python manage.py migrate_users --default-role employee
+
+# Migrar e aprovar automaticamente
+python manage.py migrate_users --auto-approve
+```
+
+**Opções disponíveis:**
+
+- `--dry-run`: Mostra o que seria feito sem fazer alterações
+- `--default-role`: Role padrão para usuários sem role explícita
+- `--auto-approve`: Aprova automaticamente usuários migrados
+
+---
+
 ## 🧩 Arquitetura e Padrões
 
 Conforme [ARQUITETURA.md](./docs/adr/ARQUITETURA.md):
