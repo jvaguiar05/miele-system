@@ -41,13 +41,13 @@
 
 **Objetivo:** Autenticar com JWT; conta pendente para aprovação.
 
-- [ ] `apps/identity`: User custom (`AUTH_USER_MODEL`), `approval_status`, `soft-delete`
-- [ ] SimpleJWT: access (~15m), refresh (7–14d) com rotação + blacklist
-- [ ] Endpoints: `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`
-- [ ] RBAC: Groups/Permissions nativos; permissões DRF por viewset
-- [ ] `users/me` (GET/PATCH) + `password` (POST)
-- [ ] Throttling e `django-ratelimit` em `/auth/*`
-- [ ] 2FA TOTP (django-otp) — modelo e enrolment endpoints esqueleto (ativação completa no Dia 7)
+- [x] `apps/identity`: User custom (`AUTH_USER_MODEL`), `approval_status`, `soft-delete`
+- [x] SimpleJWT: access (~15m), refresh (7–14d) com rotação + blacklist
+- [x] Endpoints: `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`
+- [x] RBAC: Groups/Permissions nativos; permissões DRF por viewset
+- [x] `users/me` (GET/PATCH) + `password` (POST)
+- [x] Throttling e `django-ratelimit` em `/auth/*`
+- [x] 2FA TOTP (django-otp) — modelo e enrolment endpoints esqueleto (ativação completa no Dia 7)
 
 **Entrega do dia:** Fluxo JWT completo (login/refresh/logout), registro com status pendente.
 
