@@ -997,7 +997,7 @@ class ReviewChangeRequestView(APIView):
         serializer = ReviewChangeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        action = serializer.validated_data["action"]
+        action = serializer.validated_data["review_action"]
         review_notes = serializer.validated_data.get("review_notes", "")
 
         if action == "approve":

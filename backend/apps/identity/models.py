@@ -8,6 +8,9 @@ import uuid
 
 # Define your models here
 class User(AbstractUser):
+    # Flag para auditoria automática
+    __audit__ = True
+
     class ApprovalStatus(models.TextChoices):
         PENDING = "pending", _("Pending")
         APPROVED = "approved", _("Approved")
@@ -63,6 +66,9 @@ class TOTPDevice(Device):
 
 
 class SensibleDataChangeRequest(models.Model):
+    # Flag para auditoria automática
+    __audit__ = True
+
     class RequestType(models.TextChoices):
         EMAIL_CHANGE = "email_change", _("Email Change")
         ROLE_CHANGE = "role_change", _("Role Change")

@@ -154,7 +154,7 @@ class EmailChangeRequestSerializer(serializers.Serializer):
 
 
 class ReviewChangeRequestSerializer(serializers.Serializer):
-    action = serializers.ChoiceField(choices=["approve", "reject"], required=True)
+    review_action = serializers.ChoiceField(choices=["approve", "reject"], required=True)
     review_notes = serializers.CharField(
         max_length=1000, required=False, allow_blank=True
     )
