@@ -7,6 +7,7 @@ from django.db.models import Q
 from common.approvals.models import ApprovalRequest
 from common.approvals.services import ApprovalService
 from .serializers import ApprovalRequestSerializer, ApprovalActionSerializer
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
 
 class PingSerializer(serializers.Serializer):
@@ -18,10 +19,22 @@ class PingView(APIView):
     permission_classes = []
     serializer_class = PingSerializer
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Verificação de saúde do admin",
+        description="Endpoint simples para verificar se o admin está funcionando. Não requer autenticação.",
+        responses={
+            200: OpenApiResponse(
+                description="Admin funcionando corretamente",
+                examples=[OpenApiExample("Sucesso", value={"ok": True})],
+            )
+        },
+    )
     def get(self, request):
         return Response({"ok": True})
 
 
+@extend_schema(tags=["Admin"])
 class ApprovalRequestAdminViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet para administração de solicitações de aprovação.
@@ -52,6 +65,45 @@ class ApprovalRequestAdminViewSet(viewsets.ReadOnlyModelViewSet):
 
         return queryset
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Listar solicitações de aprovação",
+        description="Lista todas as solicitações de aprovação com filtros opcionais (status, resource_type, requested_by).",
+        responses={
+            200: OpenApiResponse(description="Lista de solicitações de aprovação"),
+        },
+    )
+    def list(self, request, *args, **kwargs):
+        """Lista todas as solicitações de aprovação."""
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        tags=["Admin"],
+        summary="Detalhar solicitação de aprovação",
+        description="Retorna os detalhes de uma solicitação de aprovação específica.",
+        responses={
+            200: OpenApiResponse(description="Detalhes da solicitação de aprovação"),
+            404: OpenApiResponse(description="Solicitação não encontrada"),
+        },
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """Retorna uma solicitação de aprovação específica."""
+        return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
+        tags=["Admin"],
+        summary="Aprovar ou rejeitar solicitação",
+        description="Permite que administradores aprovem ou rejeitem solicitações de aprovação pendentes.",
+        request=ApprovalActionSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Solicitação processada com sucesso",
+                examples=[OpenApiExample("Aprovado", value={"message": "Solicitação aprovada e executada com sucesso.", "approval_request": {}})],
+            ),
+            400: OpenApiResponse(description="Erro na validação ou processamento"),
+            404: OpenApiResponse(description="Solicitação não encontrada"),
+        },
+    )
     @action(detail=True, methods=["post"], url_path="approve-reject")
     def approve_reject(self, request, pk=None):
         """
@@ -97,6 +149,17 @@ class ApprovalRequestAdminViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Listar solicitações pendentes",
+        description="Retorna todas as solicitações de aprovação que estão aguardando análise.",
+        responses={
+            200: OpenApiResponse(
+                description="Lista de solicitações pendentes",
+                examples=[OpenApiExample("Lista pendentes", value=[])],
+            )
+        },
+    )
     @action(detail=False, methods=["get"], url_path="pending")
     def pending(self, request):
         """
@@ -112,6 +175,17 @@ class ApprovalRequestAdminViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Estatísticas de solicitações",
+        description="Retorna estatísticas resumidas sobre solicitações de aprovação (pendentes, aprovadas, rejeitadas).",
+        responses={
+            200: OpenApiResponse(
+                description="Estatísticas das solicitações",
+                examples=[OpenApiExample("Stats", value={"pending": 5, "approved": 20, "rejected": 3, "total": 28})],
+            )
+        },
+    )
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request):
         """

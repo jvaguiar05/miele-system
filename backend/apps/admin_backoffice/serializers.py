@@ -60,7 +60,10 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
 class ApprovalActionSerializer(serializers.Serializer):
     """Serializer para ações de aprovação/rejeição."""
 
-    approval_action = serializers.ChoiceField(choices=["approve", "reject"])
+    approval_action = serializers.ChoiceField(
+        choices=[("approve", "Approve"), ("reject", "Reject")],
+        help_text="Ação a ser executada: aprovar ou rejeitar"
+    )
     notes = serializers.CharField(required=False, allow_blank=True)
 
     def validate_approval_action(self, value):

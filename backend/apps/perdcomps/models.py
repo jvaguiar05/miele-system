@@ -9,18 +9,18 @@ class LossCompensation(models.Model):
     """
     Modelo de perda de compensação (perdcomp) com auditoria automática.
     """
-
-    class Status(models.TextChoices):
-        PENDING = "PENDING", "Pendente"
-        APPROVED = "APPROVED", "Aprovado"
-        REJECTED = "REJECTED", "Rejeitado"
-        CANCELLED = "CANCELLED", "Cancelado"
+    
+    class LossStatus(models.TextChoices):
+        PENDING = 'PENDING', 'Pendente'
+        APPROVED = 'APPROVED', 'Aprovado'
+        REJECTED = 'REJECTED', 'Rejeitado'
+        CANCELLED = 'CANCELLED', 'Cancelado'
 
     class LossType(models.TextChoices):
-        OPERATIONAL = "OPERATIONAL", "Operacional"
-        FINANCIAL = "FINANCIAL", "Financeira"
-        TECHNICAL = "TECHNICAL", "Técnica"
-        OTHER = "OTHER", "Outros"
+        OPERATIONAL = 'OPERATIONAL', 'Operacional'
+        FINANCIAL = 'FINANCIAL', 'Financeira'
+        TECHNICAL = 'TECHNICAL', 'Técnica'
+        OTHER = 'OTHER', 'Outros'
 
     # Relacionamentos
     client = models.ForeignKey(
@@ -50,10 +50,10 @@ class LossCompensation(models.Model):
         max_digits=15, decimal_places=2, verbose_name="Valor da compensação"
     )
 
-    status = models.CharField(
+    loss_status = models.CharField(
         max_length=20,
-        choices=Status.choices,
-        default=Status.PENDING,
+        choices=LossStatus.choices,
+        default=LossStatus.PENDING,
         verbose_name="Status",
     )
 
@@ -90,7 +90,7 @@ class LossCompensation(models.Model):
         verbose_name_plural = "Perdas de Compensação"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["client", "status"]),
+            models.Index(fields=["client", "loss_status"]),
             models.Index(fields=["reference_number"]),
             models.Index(fields=["created_at"]),
             models.Index(fields=["loss_date"]),

@@ -11,7 +11,7 @@ class Client(models.Model):
     # Flag para auditoria automática
     __audit__ = True
 
-    class Status(models.TextChoices):
+    class ClientStatus(models.TextChoices):
         PENDING = "pending", "Pendente"
         ACTIVE = "active", "Ativo"
         SUSPENDED = "suspended", "Suspenso"
@@ -23,10 +23,10 @@ class Client(models.Model):
     # Dados principais (sensíveis - requerem aprovação)
     cnpj = models.CharField(max_length=18, unique=True, help_text="CNPJ do cliente")
     razao_social = models.CharField(max_length=255, help_text="Razão social do cliente")
-    status = models.CharField(
+    client_status = models.CharField(
         max_length=20,
-        choices=Status.choices,
-        default=Status.PENDING,
+        choices=ClientStatus.choices,
+        default=ClientStatus.PENDING,
         help_text="Status do cliente",
     )
     is_active = models.BooleanField(default=True, help_text="Cliente ativo no sistema")
@@ -39,6 +39,12 @@ class Client(models.Model):
     telefone = models.CharField(
         max_length=20, blank=True, help_text="Telefone de contato"
     )
+    
+    # Campo não sensível para anotações
+    annotations = models.TextField(
+        blank=True, 
+        help_text="Anotações internas sobre o cliente"
+    )
 
     # Auditoria
     created_at = models.DateTimeField(default=timezone.now)
@@ -50,7 +56,7 @@ class Client(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["cnpj"]),
-            models.Index(fields=["status"]),
+            models.Index(fields=["client_status"]),
             models.Index(fields=["is_active"]),
             models.Index(fields=["created_at"]),
         ]
