@@ -11,6 +11,10 @@ class ApprovalRequest(models.Model):
     Modelo para solicitações de aprovação de mudanças críticas no sistema.
     """
 
+    # Disable automatic audit logging for approval requests
+    # since they serve as their own audit trail
+    __audit__ = False
+
     class ApprovalStatus(models.TextChoices):
         PENDING = "pending", "Pendente"
         APPROVED = "approved", "Aprovado"
@@ -34,7 +38,9 @@ class ApprovalRequest(models.Model):
         max_length=255, help_text="Assunto da solicitação (ex: 'Ativar cliente XYZ')"
     )
     action = models.CharField(
-        max_length=20, choices=ApprovalAction.choices, help_text="Tipo de ação a ser executada"
+        max_length=20,
+        choices=ApprovalAction.choices,
+        help_text="Tipo de ação a ser executada",
     )
     status = models.CharField(
         max_length=20,
@@ -120,7 +126,10 @@ class ApprovalRequest(models.Model):
     @property
     def is_approved(self):
         """Verifica se a solicitação foi aprovada."""
-        return self.status in [self.ApprovalStatus.APPROVED, self.ApprovalStatus.EXECUTED]
+        return self.status in [
+            self.ApprovalStatus.APPROVED,
+            self.ApprovalStatus.EXECUTED,
+        ]
 
     @property
     def can_be_executed(self):

@@ -42,6 +42,7 @@ class AuditService:
         # Se não houver correlation_id no contexto, gerar um novo (para comandos Django)
         if correlation_id is None:
             import uuid
+
             correlation_id = str(uuid.uuid4())
 
         request_metadata = get_request_metadata()
@@ -77,6 +78,7 @@ class AuditService:
     ) -> AuditLog:
         """Registra uma ação de criação."""
         new_data = AuditService._serialize_object(content_object)
+        new_data = AuditService._filter_relevant_data(new_data)
         return AuditService.log_action(
             action=AuditLog.AuditAction.CREATE,
             content_object=content_object,
@@ -91,11 +93,24 @@ class AuditService:
     ) -> AuditLog:
         """Registra uma ação de atualização."""
         new_data = AuditService._serialize_object(content_object)
+        new_data = AuditService._filter_relevant_data(new_data)
+        old_data = AuditService._filter_relevant_data(old_data)
+
+        # Filter to only include changed fields
+        old_data_filtered = {}
+        new_data_filtered = {}
+
+        for field, new_value in new_data.items():
+            old_value = old_data.get(field)
+            if old_value != new_value:
+                old_data_filtered[field] = old_value
+                new_data_filtered[field] = new_value
+
         return AuditService.log_action(
             action=AuditLog.AuditAction.UPDATE,
             content_object=content_object,
-            old_data=old_data,
-            new_data=new_data,
+            old_data=old_data_filtered,
+            new_data=new_data_filtered,
             user=user,
             metadata=metadata,
         )
@@ -131,6 +146,13 @@ class AuditService:
                 data = {}
                 for field in obj._meta.fields:
                     value = getattr(obj, field.name)
+                    # Skip fields that are typically not relevant for audit logs
+                    if (
+                        field.name in ["password", "last_login", "date_joined"]
+                        and value is None
+                    ):
+                        continue
+
                     # Converter valores para formato JSON-serializável
                     if value is None:
                         data[field.name] = None
@@ -156,3 +178,24 @@ class AuditService:
                 return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
         else:
             return {"value": str(obj)}
+
+    @staticmethod
+    def _filter_relevant_data(data: Dict) -> Dict:
+        """
+        Filtra dados para manter apenas informações relevantes para auditoria.
+        Remove campos com valores None, vazios ou irrelevantes.
+        """
+        filtered = {}
+        irrelevant_fields = ["password", "_state"]
+
+        for key, value in data.items():
+            # Skip irrelevant fields
+            if key in irrelevant_fields:
+                continue
+            # Skip None values for certain fields
+            if value is None and key in ["last_login", "date_joined"]:
+                continue
+            # Include all other fields
+            filtered[key] = value
+
+        return filtered
