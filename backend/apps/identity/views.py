@@ -243,7 +243,36 @@ class LogoutView(APIView):
         refresh_token = serializer.validated_data["refresh"]
         try:
             token = RefreshToken(refresh_token)
+
+            # Get user from token before blacklisting
+            user_id = token.payload.get("user_id")
+            user = None
+            if user_id:
+                from django.contrib.auth import get_user_model
+
+                User = get_user_model()
+                try:
+                    user = User.objects.get(id=user_id)
+                except User.DoesNotExist:
+                    user = None
+
+            # Blacklist the token
             token.blacklist()
+
+            # Log logout action
+            if user:
+                from common.audit.services import AuditService
+
+                # Get request metadata for IP address
+                metadata = {}
+                ip_address = request.META.get("REMOTE_ADDR")
+                if ip_address:
+                    metadata["ip"] = ip_address
+
+                AuditService.log_action(
+                    action="LOGOUT", content_object=user, user=user, metadata=metadata
+                )
+
         except Exception:
             raise InvalidTokenError()
         return Response(status=status.HTTP_205_RESET_CONTENT)

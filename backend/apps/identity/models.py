@@ -3,11 +3,12 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django_otp.models import Device
+from common.audit.signals import AuditableMixin
 import uuid
 
 
 # Define your models here
-class User(AbstractUser):
+class User(AbstractUser, AuditableMixin):
     # Flag para auditoria automática
     __audit__ = True
 

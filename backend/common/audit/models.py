@@ -1,11 +1,9 @@
 import uuid
 from django.db import models
-from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.utils import timezone
-
-User = get_user_model()
+from django.conf import settings
 
 
 class AuditLog(models.Model):
@@ -32,7 +30,7 @@ class AuditLog(models.Model):
 
     # Usuário que executou a ação
     user = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

@@ -60,11 +60,36 @@ def audit_post_save(sender, instance, created, **kwargs):
             # Objeto atualizado
             old_data = getattr(instance, "_audit_old_data", None)
             if old_data:
-                AuditService.log_update(
-                    content_object=instance,
-                    old_data=old_data,
-                    metadata={"type": "auto_audit_update"},
-                )
+                # Check if only exempt fields were changed
+                exempt_fields = []
+                if hasattr(instance, "get_audit_exempt_fields"):
+                    exempt_fields = instance.get_audit_exempt_fields()
+                elif hasattr(sender, "get_audit_exempt_fields"):
+                    # If it's a class method
+                    exempt_fields = sender.get_audit_exempt_fields()
+                else:
+                    # Default exempt fields
+                    exempt_fields = ["updated_at", "last_login", "password"]
+
+                # Get current data
+                new_data = AuditService._serialize_object(instance)
+
+                # Check if any non-exempt fields changed
+                significant_changes = False
+                for field, new_value in new_data.items():
+                    if field not in exempt_fields:
+                        old_value = old_data.get(field)
+                        if old_value != new_value:
+                            significant_changes = True
+                            break
+
+                # Only log if there are significant changes
+                if significant_changes:
+                    AuditService.log_update(
+                        content_object=instance,
+                        old_data=old_data,
+                        metadata={"type": "auto_audit_update"},
+                    )
     except Exception as e:
         # Log do erro, mas não interromper o processo principal
         import logging

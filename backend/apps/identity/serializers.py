@@ -56,6 +56,25 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Now attempt authentication
         try:
             data = super().validate(attrs)
+
+            # Log successful login to audit
+            user = self.user  # User is set by parent validate method
+            if user:
+                from common.audit.services import AuditService
+
+                # Get request object to extract IP
+                request = self.context.get("request")
+                metadata = {}
+                if request:
+                    ip_address = request.META.get("REMOTE_ADDR")
+                    if ip_address:
+                        metadata["ip"] = ip_address
+
+                # Log login action using the user as content object
+                AuditService.log_action(
+                    action="LOGIN", content_object=user, user=user, metadata=metadata
+                )
+
             return data
         except serializers.ValidationError as e:
             # Check if it's an authentication error (wrong password)
@@ -122,7 +141,7 @@ class UserRegistrationSerializer(serializers.Serializer):
             approval_status=User.ApprovalStatus.PENDING,
             role=User.UserRole.EMPLOYEE,  # Default role for new registrations
         )
-        
+
         # Create approval request for user account activation
         ApprovalService.create_request(
             subject=f"Ativação de conta para {user.username}",
@@ -130,14 +149,8 @@ class UserRegistrationSerializer(serializers.Serializer):
             resource_type="identity.User",
             resource_id=str(user.id),  # Use the actual primary key (id), not public_id
             payload_diff={
-                "old_data": {
-                    "approval_status": "pending",
-                    "is_active": False
-                },
-                "new_data": {
-                    "approval_status": "approved",
-                    "is_active": True
-                }
+                "old_data": {"approval_status": "pending", "is_active": False},
+                "new_data": {"approval_status": "approved", "is_active": True},
             },
             reason=f"Solicitação de ativação de conta para novo usuário: {user.username} ({user.email})",
             requested_by=user,
@@ -149,11 +162,13 @@ class UserRegistrationSerializer(serializers.Serializer):
                     "last_name": user.last_name,
                     "role": user.role,
                     "registration_date": user.date_joined.isoformat(),
-                    "public_id": str(user.public_id)  # Store public_id in metadata for reference
+                    "public_id": str(
+                        user.public_id
+                    ),  # Store public_id in metadata for reference
                 }
-            }
+            },
         )
-        
+
         return user
 
 
@@ -188,9 +203,9 @@ class EmailChangeRequestSerializer(serializers.Serializer):
 
 class ReviewChangeRequestSerializer(serializers.Serializer):
     review_action = serializers.ChoiceField(
-        choices=[("approve", "Approve Request"), ("reject", "Reject Request")], 
+        choices=[("approve", "Approve Request"), ("reject", "Reject Request")],
         required=True,
-        help_text="Ação de revisão: aprovar ou rejeitar a solicitação"
+        help_text="Ação de revisão: aprovar ou rejeitar a solicitação",
     )
     review_notes = serializers.CharField(
         max_length=1000, required=False, allow_blank=True
