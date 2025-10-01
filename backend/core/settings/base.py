@@ -173,16 +173,24 @@ SPECTACULAR_SETTINGS = {
     "SECURITY": [{"BearerAuth": []}],
     "TAGS": [
         {
-            "name": "Identity - Auth",
+            "name": "Auth",
             "description": "Endpoints de autenticação e autorização",
         },
         {
-            "name": "Identity - Users",
+            "name": "Users",
             "description": "Endpoints de gerenciamento de usuários",
         },
         {
-            "name": "Identity - Admin",
+            "name": "Admin",
             "description": "Endpoints administrativos (requer privilégios de admin)",
+        },
+        {
+            "name": "Clients",
+            "description": "Endpoints relacionados a clientes",
+        },
+        {
+            "name": "PER/DCOMPs",
+            "description": "Endpoints relacionados a PER/DCOMPs (Perdas e Compensações)",
         },
     ],
     "SWAGGER_UI_SETTINGS": {
