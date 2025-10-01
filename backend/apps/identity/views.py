@@ -268,6 +268,7 @@ class LogoutView(APIView):
                 ip_address = request.META.get("REMOTE_ADDR")
                 if ip_address:
                     metadata["ip"] = ip_address
+                metadata["logout_type"] = "api"
 
                 AuditService.log_action(
                     action="LOGOUT", content_object=user, user=user, metadata=metadata

@@ -57,7 +57,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         try:
             data = super().validate(attrs)
 
-            # Log successful login to audit
+            # Log successful login to audit (JWT doesn't trigger user_logged_in signal)
             user = self.user  # User is set by parent validate method
             if user:
                 from common.audit.services import AuditService
@@ -69,6 +69,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                     ip_address = request.META.get("REMOTE_ADDR")
                     if ip_address:
                         metadata["ip"] = ip_address
+                metadata["login_type"] = "api"
 
                 # Log login action using the user as content object
                 AuditService.log_action(
