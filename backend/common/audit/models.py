@@ -15,7 +15,7 @@ class AuditLog(models.Model):
 
     class AuditAction(models.TextChoices):
         CREATE = "CREATE", "Criar"
-        UPDATE = "UPDATE", "Atualizar" 
+        UPDATE = "UPDATE", "Atualizar"
         DELETE = "DELETE", "Excluir"
         LOGIN = "LOGIN", "Login"
         LOGOUT = "LOGOUT", "Logout"
