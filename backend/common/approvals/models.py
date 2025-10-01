@@ -38,9 +38,13 @@ class ApprovalRequest(models.Model):
     )
     status = models.CharField(
         max_length=20,
-        choices=ApprovalStatus.choices,
-        default=ApprovalStatus.PENDING,
-        help_text="Status atual da solicitação",
+        choices=[
+            ("pending", "Pending"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+        ],
+        default="pending",
+        help_text="Status da solicitação",
     )
 
     # Dados da mudança

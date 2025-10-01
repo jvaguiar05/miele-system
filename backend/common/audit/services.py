@@ -39,6 +39,11 @@ class AuditService:
             user = get_current_user()
 
         correlation_id = get_correlation_id()
+        # Se não houver correlation_id no contexto, gerar um novo (para comandos Django)
+        if correlation_id is None:
+            import uuid
+            correlation_id = str(uuid.uuid4())
+
         request_metadata = get_request_metadata()
 
         # Preparar metadata
@@ -127,11 +132,24 @@ class AuditService:
                 for field in obj._meta.fields:
                     value = getattr(obj, field.name)
                     # Converter valores para formato JSON-serializável
-                    try:
-                        json.dumps(value, cls=DjangoJSONEncoder)
-                        data[field.name] = value
-                    except (TypeError, ValueError):
-                        data[field.name] = str(value)
+                    if value is None:
+                        data[field.name] = None
+                    else:
+                        # Usar DjangoJSONEncoder para converter tipos complexos
+                        encoder = DjangoJSONEncoder()
+                        try:
+                            # Tentar converter o valor usando o encoder
+                            serialized_value = encoder.default(value)
+                            data[field.name] = serialized_value
+                        except TypeError:
+                            # Se o encoder não conseguir converter, usar o valor original
+                            # (tipos básicos como string, int, float, bool)
+                            try:
+                                json.dumps(value)
+                                data[field.name] = value
+                            except (TypeError, ValueError):
+                                # Como último recurso, converter para string
+                                data[field.name] = str(value)
                 return data
             else:
                 # Para outros objetos

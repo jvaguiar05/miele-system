@@ -98,6 +98,36 @@ class ApprovalService:
         # Rejeitar a solicitação
         approval_request.reject(approved_by, notes)
 
+        # Handle special rejection cases
+        if approval_request.resource_type == "identity.User" and approval_request.action == "activate":
+            # For user activation rejection, set the user status to declined
+            try:
+                app_label, model_name = approval_request.resource_type.split(".")
+                model_class = apps.get_model(app_label, model_name)
+                user = model_class.objects.get(pk=approval_request.resource_id)
+                
+                # Set user as declined and inactive
+                user.approval_status = "declined"
+                user.is_active = False
+                user.save()
+                
+                # Log the user status change
+                AuditService.log_update(
+                    content_object=user,
+                    old_data={"approval_status": "pending", "is_active": True},
+                    user=approved_by,
+                    metadata={"type": "user_activation_rejected", "approval_request_id": str(approval_request.id)},
+                )
+                
+            except Exception as e:
+                # Log the error but don't fail the rejection
+                AuditService.log_action(
+                    action="ERROR",
+                    content_object=approval_request,
+                    user=approved_by,
+                    metadata={"type": "user_rejection_error", "error": str(e)},
+                )
+
         # Registrar rejeição na auditoria
         AuditService.log_update(
             content_object=approval_request,
@@ -174,7 +204,19 @@ class ApprovalService:
                     is_active = (
                         approval_request.action == ApprovalRequest.ApprovalAction.ACTIVATE
                     )
-                    if hasattr(obj, "is_active"):
+                    
+                    # Handle user activation specifically
+                    if approval_request.resource_type == "identity.User":
+                        # For user activation, update both is_active and approval_status
+                        if is_active:
+                            obj.is_active = True
+                            obj.approval_status = "approved"
+                        else:
+                            obj.is_active = False
+                            obj.approval_status = "declined"
+                        obj.save()
+                    elif hasattr(obj, "is_active"):
+                        # For other objects, just update is_active
                         obj.is_active = is_active
                         obj.save()
 
