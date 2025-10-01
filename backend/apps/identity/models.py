@@ -3,11 +3,15 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django_otp.models import Device
+from common.audit.signals import AuditableMixin
 import uuid
 
 
 # Define your models here
-class User(AbstractUser):
+class User(AbstractUser, AuditableMixin):
+    # Flag para auditoria automática
+    __audit__ = True
+
     class ApprovalStatus(models.TextChoices):
         PENDING = "pending", _("Pending")
         APPROVED = "approved", _("Approved")
@@ -63,6 +67,9 @@ class TOTPDevice(Device):
 
 
 class SensibleDataChangeRequest(models.Model):
+    # Flag para auditoria automática
+    __audit__ = True
+
     class RequestType(models.TextChoices):
         EMAIL_CHANGE = "email_change", _("Email Change")
         ROLE_CHANGE = "role_change", _("Role Change")

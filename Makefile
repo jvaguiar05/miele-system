@@ -1,4 +1,4 @@
-.PHONY: run migrate makemigrations superuser test fmt lint compile install up down logs shell dbshell check collectstatic seed
+.PHONY: run migrate makemigrations superuser test fmt lint compile install up down logs shell dbshell check collectstatic seed setup_database
 
 # Variáveis úteis
 host ?= 127.0.0.1
@@ -40,6 +40,15 @@ collectstatic:
 
 seed:
 	python backend/manage.py runscript load_demo_data
+
+setup_database:
+	cd backend && python manage.py setup_roles
+	cd backend && python manage.py create_superuser_with_role \
+		--username miele-admin \
+		--email compasse.mieleadm@gmail.com \
+		--first-name Miele \
+		--last-name Admin \
+		--password mieleadminadmin
 
 # ---- Quality ----
 

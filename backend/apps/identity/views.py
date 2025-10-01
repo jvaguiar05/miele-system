@@ -53,7 +53,7 @@ class PingView(APIView):
     permission_classes = []
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Verificação de saúde da API",
         description="Endpoint simples para verificar se a API está funcionando. Não requer autenticação.",
         responses={
@@ -77,7 +77,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Autenticação de usuário",
         description="""
         Realiza login do usuário e retorna tokens JWT (access e refresh).
@@ -146,7 +146,7 @@ class CustomTokenRefreshView(TokenRefreshView):
     throttle_classes = [AuthRefreshThrottle]
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Renovação de token JWT",
         description="""
         Renova o access token utilizando um refresh token válido.
@@ -204,7 +204,7 @@ class LogoutView(APIView):
     throttle_classes = [UserRateThrottle]  # Standard user throttling for logout
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Logout do usuário",
         description="""
         Realiza logout do usuário adicionando o refresh token à blacklist.
@@ -243,7 +243,37 @@ class LogoutView(APIView):
         refresh_token = serializer.validated_data["refresh"]
         try:
             token = RefreshToken(refresh_token)
+
+            # Get user from token before blacklisting
+            user_id = token.payload.get("user_id")
+            user = None
+            if user_id:
+                from django.contrib.auth import get_user_model
+
+                User = get_user_model()
+                try:
+                    user = User.objects.get(id=user_id)
+                except User.DoesNotExist:
+                    user = None
+
+            # Blacklist the token
             token.blacklist()
+
+            # Log logout action
+            if user:
+                from common.audit.services import AuditService
+
+                # Get request metadata for IP address
+                metadata = {}
+                ip_address = request.META.get("REMOTE_ADDR")
+                if ip_address:
+                    metadata["ip"] = ip_address
+                metadata["logout_type"] = "api"
+
+                AuditService.log_action(
+                    action="LOGOUT", content_object=user, user=user, metadata=metadata
+                )
+
         except Exception:
             raise InvalidTokenError()
         return Response(status=status.HTTP_205_RESET_CONTENT)
@@ -259,7 +289,7 @@ class RBACView(APIView):
     permission_classes = [IsEmployeeOrAdmin]  # Employee or Admin can check permissions
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Verificação de permissões RBAC",
         description="""
         Retorna as permissões e capacidades do usuário autenticado baseadas em seu role.
@@ -365,7 +395,7 @@ class UserProfileView(APIView):
     ]  # Users can view/edit own profile, admins can edit any
 
     @extend_schema(
-        tags=["Identity - Users"],
+        tags=["Users"],
         summary="Visualizar perfil do usuário",
         description="""
         Retorna os dados do perfil do usuário autenticado.
@@ -402,7 +432,7 @@ class UserProfileView(APIView):
         return Response(serializer.data)
 
     @extend_schema(
-        tags=["Identity - Users"],
+        tags=["Users"],
         summary="Atualizar perfil do usuário",
         description="""
         Atualiza os dados do perfil do usuário autenticado.
@@ -460,7 +490,7 @@ class ChangePasswordView(APIView):
     parser_classes = [JSONParser]
 
     @extend_schema(
-        tags=["Identity - Users"],
+        tags=["Users"],
         summary="Alterar senha do usuário",
         description="""
         Permite que o usuário altere sua senha fornecendo a senha atual e a nova senha.
@@ -547,7 +577,7 @@ class AuthThrottleView(APIView):
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Teste de throttling",
         description="""
         Endpoint de teste para verificar o funcionamento do rate limiting.
@@ -589,7 +619,7 @@ class TOTPEnrollView(APIView):
     throttle_classes = [SensitiveActionThrottle]  # Sensitive action throttling
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Inscrição em 2FA TOTP",
         description="""
         Configura autenticação de dois fatores (2FA) baseada em TOTP para o usuário.
@@ -664,7 +694,7 @@ class UserRegistrationView(APIView):
     throttle_classes = [AuthRegisterThrottle]  # Restrictive throttling for registration
 
     @extend_schema(
-        tags=["Identity - Auth"],
+        tags=["Auth"],
         summary="Registro de novo usuário",
         description="""
         Registra um novo usuário no sistema. O usuário ficará com status "pendente" até aprovação administrativa.
@@ -756,7 +786,7 @@ class UserDeactivateView(APIView):
     ]  # Users can deactivate own account, admins can deactivate any
 
     @extend_schema(
-        tags=["Identity - Users"],
+        tags=["Users"],
         request=UserDeleteSerializer,
         responses={
             200: OpenApiResponse(description="User account deactivated successfully"),
@@ -792,7 +822,7 @@ class EmailChangeRequestView(APIView):
     throttle_classes = [SensitiveActionThrottle]  # Sensitive action throttling
 
     @extend_schema(
-        tags=["Identity - Users"],
+        tags=["Users"],
         request=EmailChangeRequestSerializer,
         responses={
             201: OpenApiResponse(
@@ -838,7 +868,7 @@ class SensibleDataChangeRequestListView(APIView):
     serializer_class = SensibleDataChangeRequestSerializer
 
     @extend_schema(
-        tags=["Identity - Admin"],
+        tags=["Admin"],
         summary="Listar todas as solicitações de alteração (Admin)",
         description="""
         Lista todas as solicitações de alteração de dados sensíveis no sistema.
@@ -919,7 +949,7 @@ class MyChangeRequestsView(APIView):
     serializer_class = SensibleDataChangeRequestSerializer
 
     @extend_schema(
-        tags=["Identity - Users"],
+        tags=["Users"],
         summary="Listar minhas solicitações de alteração",
         description="""
         Lista as solicitações de alteração de dados sensíveis do usuário autenticado.
@@ -979,7 +1009,7 @@ class ReviewChangeRequestView(APIView):
     permission_classes = [IsAdmin]  # Only admins can review requests
 
     @extend_schema(
-        tags=["Identity - Admin"],
+        tags=["Admin"],
         request=ReviewChangeRequestSerializer,
         responses={
             200: OpenApiResponse(description="Request reviewed successfully"),
@@ -997,7 +1027,7 @@ class ReviewChangeRequestView(APIView):
         serializer = ReviewChangeRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        action = serializer.validated_data["action"]
+        action = serializer.validated_data["review_action"]
         review_notes = serializer.validated_data.get("review_notes", "")
 
         if action == "approve":

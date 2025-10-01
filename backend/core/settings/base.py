@@ -5,7 +5,7 @@ from pathlib import Path
 
 import environ
 
-BASE_DIR = Path(__file__).resolve().parents[2]  # .../backend
+BASE_DIR = Path(__file__).resolve().parents[2]
 env = environ.Env(
     DEBUG=(bool, False),
     SECRET_KEY=(str, "dev-insecure-secret"),
@@ -20,7 +20,6 @@ env = environ.Env(
     SIMPLEJWT_REFRESH_DAYS=(int, 14),
 )
 
-# Load .env if present at repo root (../.. from this file)
 ENV_FILE = BASE_DIR.parent / ".env"
 if ENV_FILE.exists():
     environ.Env.read_env(str(ENV_FILE))
@@ -49,6 +48,10 @@ INSTALLED_APPS = [
     "apps.identity",
     "apps.clients",
     "apps.perdcomps",
+    "apps.admin_backoffice",
+    # Common modules
+    "common.audit",
+    "common.approvals",
 ]
 
 MIDDLEWARE = [
@@ -58,7 +61,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "core.middleware.FailedLoginTrackingMiddleware",  # Track failed logins
+    "core.middleware.FailedLoginTrackingMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.middleware.CorrelationIdMiddleware",
@@ -170,16 +173,24 @@ SPECTACULAR_SETTINGS = {
     "SECURITY": [{"BearerAuth": []}],
     "TAGS": [
         {
-            "name": "Identity - Auth",
+            "name": "Auth",
             "description": "Endpoints de autenticação e autorização",
         },
         {
-            "name": "Identity - Users",
+            "name": "Users",
             "description": "Endpoints de gerenciamento de usuários",
         },
         {
-            "name": "Identity - Admin",
+            "name": "Admin",
             "description": "Endpoints administrativos (requer privilégios de admin)",
+        },
+        {
+            "name": "Clients",
+            "description": "Endpoints relacionados a clientes",
+        },
+        {
+            "name": "PER/DCOMPs",
+            "description": "Endpoints relacionados a PER/DCOMPs (Perdas e Compensações)",
         },
     ],
     "SWAGGER_UI_SETTINGS": {
@@ -220,4 +231,20 @@ LOGGING = {
         }
     },
     "root": {"handlers": ["console"], "level": "INFO"},
+}
+
+# Configuração de campos sensíveis que requerem aprovação
+SENSITIVE_FIELDS_CONFIG = {
+    "identity.User": ["role", "is_active", "email", "approval_status"],
+    "clients.Client": ["cnpj", "razao_social", "status", "is_active"],
+    "perdcomps.LossCompensation": [
+        "reference_number",
+        "loss_amount",
+        "compensation_amount",
+        "status",
+        "loss_type",
+        "loss_date",
+        "approval_deadline",
+        "is_active",
+    ],
 }

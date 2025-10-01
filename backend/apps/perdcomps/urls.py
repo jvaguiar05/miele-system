@@ -1,5 +1,10 @@
-from django.urls import include, path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import LossCompensationViewSet
+
+router = DefaultRouter()
+router.register(r'', LossCompensationViewSet, basename='losscompensation')
 
 urlpatterns = [
-    # placeholder: include viewsets or function-based views
+    path('', include(router.urls)),
 ]

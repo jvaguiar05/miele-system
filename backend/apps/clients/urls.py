@@ -1,5 +1,10 @@
-from django.urls import include, path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import ClientViewSet
+
+router = DefaultRouter()
+router.register(r'', ClientViewSet, basename='client')
 
 urlpatterns = [
-    # placeholder: include viewsets or function-based views
+    path('', include(router.urls)),
 ]
