@@ -30,8 +30,10 @@ class ApprovalRequest(models.Model):
         DEACTIVATE = "deactivate", "Desativar"
         CUSTOM = "custom", "Ação Personalizada"
 
-    # Identificadores únicos
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Chave primária interna (int) para performance em FK
+    id = models.BigAutoField(primary_key=True)
+    # ID público (UUID) para exposição segura
+    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
     # Informações da solicitação
     subject = models.CharField(
@@ -108,6 +110,7 @@ class ApprovalRequest(models.Model):
         db_table = "approval_requests"
         ordering = ["-created_at"]
         indexes = [
+            models.Index(fields=["public_id"]),
             models.Index(fields=["status"]),
             models.Index(fields=["requested_by"]),
             models.Index(fields=["approved_by"]),

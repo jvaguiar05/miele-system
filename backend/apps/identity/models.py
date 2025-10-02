@@ -82,7 +82,10 @@ class SensibleDataChangeRequest(models.Model):
         APPROVED = "approved", _("Approved")
         REJECTED = "rejected", _("Rejected")
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Chave primária interna (int) para performance em FK
+    id = models.BigAutoField(primary_key=True)
+    # ID público (UUID) para exposição segura
+    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="change_requests"
     )
@@ -118,3 +121,9 @@ class SensibleDataChangeRequest(models.Model):
         ordering = ["-created_at"]
         verbose_name = _("Sensible Data Change Request")
         verbose_name_plural = _("Sensible Data Change Requests")
+        indexes = [
+            models.Index(fields=["public_id"]),
+            models.Index(fields=["user"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["created_at"]),
+        ]
