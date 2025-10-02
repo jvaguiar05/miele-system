@@ -19,6 +19,7 @@ from django_otp.util import random_hex
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from django.utils import timezone
 from .models import TOTPDevice, SensibleDataChangeRequest
+from common.audit.models import AuditLog
 from api.schemas.spectacular import ERROR_RESPONSES, SUCCESS_RESPONSES
 from .permissions import IsAdmin, IsEmployeeOrAdmin, IsOwnerOrAdmin
 from .serializers import (
@@ -1157,10 +1158,13 @@ class ReviewChangeRequestView(APIView):
                     change_request.user.__audit__ = True
 
                     # Log manual da aprovação de mudança de email pelo admin
-                    AuditService.log_update(
+                    # Use log_action directly to control both old_data and new_data
+                    AuditService.log_action(
+                        action=AuditLog.AuditAction.UPDATE,
                         content_object=change_request.user,
                         user=request.user,  # Admin que aprovou
                         old_data={"email": old_email},
+                        new_data={"email": new_email},
                         metadata={
                             "change_request_id": str(change_request.id),
                             "approved_by_admin": request.user.email,
@@ -1186,10 +1190,13 @@ class ReviewChangeRequestView(APIView):
                     change_request.user.__audit__ = True
 
                     # Log manual da aprovação de mudança de role pelo admin
-                    AuditService.log_update(
+                    # Use log_action directly to control both old_data and new_data
+                    AuditService.log_action(
+                        action=AuditLog.AuditAction.UPDATE,
                         content_object=change_request.user,
                         user=request.user,  # Admin que aprovou
                         old_data={"role": old_role},
+                        new_data={"role": new_role},
                         metadata={
                             "change_request_id": str(change_request.id),
                             "approved_by_admin": request.user.email,
