@@ -470,9 +470,32 @@ class UserProfileView(APIView):
     )
     def patch(self, request, *args, **kwargs):
         user = request.user
+
+        # Capture old data for audit logging
+        from common.audit.services import AuditService
+
+        old_data = AuditService._serialize_object(user)
+        old_data = AuditService._filter_relevant_data(old_data)
+
         serializer = UserProfileSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
+            # Temporarily disable automatic audit for this save
+            user.__audit__ = False
             serializer.save()
+            # Re-enable audit for future operations
+            user.__audit__ = True
+
+            # Log the profile update with explicit audit
+            AuditService.log_update(
+                content_object=user,
+                old_data=old_data,
+                user=user,
+                metadata={
+                    "type": "profile_update",
+                    "ip": request.META.get("REMOTE_ADDR"),
+                },
+            )
+
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -548,7 +571,7 @@ class ChangePasswordView(APIView):
             403: ERROR_RESPONSES[403],
         },
     )
-    def post(self, request):
+    def patch(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         old_password = serializer.validated_data["old_password"]
@@ -562,8 +585,65 @@ class ChangePasswordView(APIView):
         except ValidationError as e:
             raise PasswordValidationError()
 
+        # Capture old data for audit logging (without password)
+        from common.audit.services import AuditService
+
+        # Capture when password was last changed (if ever)
+        # We can use date_joined as proxy for first password set, or look for previous password change logs
+        last_password_change = None
+
+        # Try to find the last password change from audit logs
+        from common.audit.models import AuditLog
+
+        try:
+            last_change_log = (
+                AuditLog.objects.filter(
+                    user=request.user, action="UPDATE", metadata__type="password_change"
+                )
+                .order_by("-timestamp")
+                .first()
+            )
+
+            if last_change_log and last_change_log.new_data:
+                last_password_change = last_change_log.new_data.get("changed_at")
+            else:
+                # If no previous password change, use date_joined (account creation)
+                last_password_change = (
+                    request.user.date_joined.isoformat()
+                    if request.user.date_joined
+                    else None
+                )
+        except:
+            # Fallback to date_joined if audit query fails
+            last_password_change = (
+                request.user.date_joined.isoformat()
+                if request.user.date_joined
+                else None
+            )
+
+        # Temporarily disable automatic audit for this save
+        request.user.__audit__ = False
         request.user.set_password(new_password)
         request.user.save()
+        # Re-enable audit for future operations
+        request.user.__audit__ = True
+
+        # Log password change with historical context
+        AuditService.log_action(
+            action="UPDATE",
+            content_object=request.user,
+            old_data={"action": "password_change", "changed_at": last_password_change},
+            new_data={
+                "action": "password_changed",
+                "changed_at": timezone.now().isoformat(),
+            },
+            user=request.user,
+            metadata={
+                "type": "password_change",
+                "ip": request.META.get("REMOTE_ADDR"),
+            },
+        )
+
         return Response({"message": "Password updated successfully."})
 
 
@@ -805,9 +885,33 @@ class UserDeactivateView(APIView):
         if not user.check_password(password):
             raise InvalidPasswordError()
 
+        # Capture old data for audit logging
+        from common.audit.services import AuditService
+
+        old_data = {
+            "is_active": user.is_active,
+            "deleted_at": user.deleted_at,
+        }
+
+        # Temporarily disable automatic audit for this save
+        user.__audit__ = False
         user.is_active = False
         user.deleted_at = timezone.now()
         user.save()
+        # Re-enable audit for future operations
+        user.__audit__ = True
+
+        # Log account deactivation
+        AuditService.log_update(
+            content_object=user,
+            old_data=old_data,
+            user=user,
+            metadata={
+                "type": "account_deactivation",
+                "ip": request.META.get("REMOTE_ADDR"),
+                "self_initiated": True,
+            },
+        )
 
         return Response(
             {"message": "User account deactivated successfully"},
