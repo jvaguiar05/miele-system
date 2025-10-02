@@ -12,6 +12,9 @@ username ?=
 run:
 	python backend/manage.py runserver $(host):$(port)
 
+check:
+	python backend/manage.py check
+
 migrate:
 	python backend/manage.py migrate
 
