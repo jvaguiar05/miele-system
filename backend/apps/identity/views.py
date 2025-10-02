@@ -903,9 +903,17 @@ class UserDeactivateView(APIView):
         user.__audit__ = True
 
         # Log account deactivation
-        AuditService.log_update(
+        # Use log_action directly to control both old_data and new_data
+        new_data = {
+            "is_active": user.is_active,
+            "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
+        }
+        
+        AuditService.log_action(
+            action=AuditLog.AuditAction.UPDATE,
             content_object=user,
             old_data=old_data,
+            new_data=new_data,
             user=user,
             metadata={
                 "type": "account_deactivation",
@@ -1229,10 +1237,13 @@ class ReviewChangeRequestView(APIView):
                     change_request.user.__audit__ = True
 
                     # Log manual da aprovação de mudanças de perfil pelo admin
-                    AuditService.log_update(
+                    # Use log_action directly to control both old_data and new_data
+                    AuditService.log_action(
+                        action=AuditLog.AuditAction.UPDATE,
                         content_object=change_request.user,
                         user=request.user,  # Admin que aprovou
                         old_data=old_data,
+                        new_data=new_data,
                         metadata={
                             "change_request_id": str(change_request.id),
                             "approved_by_admin": request.user.email,
