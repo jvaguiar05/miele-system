@@ -1134,6 +1134,9 @@ class ReviewChangeRequestView(APIView):
         action = serializer.validated_data["review_action"]
         review_notes = serializer.validated_data.get("review_notes", "")
 
+        # Import AuditService para uso em múltiplos pontos
+        from common.audit.services import AuditService
+
         if action == "approve":
             change_request.status = SensibleDataChangeRequest.RequestStatus.APPROVED
 
@@ -1144,8 +1147,92 @@ class ReviewChangeRequestView(APIView):
             ):
                 new_email = change_request.requested_changes.get("new_email")
                 if new_email:
+                    old_email = change_request.user.email
                     change_request.user.email = new_email
+
+                    # Desabilitar auditoria temporariamente para evitar log automático
+                    change_request.user.__audit__ = False
                     change_request.user.save()
+                    # Reabilitar auditoria
+                    change_request.user.__audit__ = True
+
+                    # Log manual da aprovação de mudança de email pelo admin
+                    AuditService.log_update(
+                        content_object=change_request.user,
+                        user=request.user,  # Admin que aprovou
+                        old_data={"email": old_email},
+                        metadata={
+                            "change_request_id": str(change_request.id),
+                            "approved_by_admin": request.user.email,
+                            "original_user": change_request.user.email,
+                            "justification": change_request.justification,
+                        },
+                    )
+
+            # Apply other types of sensible data changes
+            elif (
+                change_request.request_type
+                == SensibleDataChangeRequest.RequestType.ROLE_CHANGE
+            ):
+                new_role = change_request.requested_changes.get("new_role")
+                if new_role:
+                    old_role = change_request.user.role
+                    change_request.user.role = new_role
+
+                    # Desabilitar auditoria temporariamente para evitar log automático
+                    change_request.user.__audit__ = False
+                    change_request.user.save()
+                    # Reabilitar auditoria
+                    change_request.user.__audit__ = True
+
+                    # Log manual da aprovação de mudança de role pelo admin
+                    AuditService.log_update(
+                        content_object=change_request.user,
+                        user=request.user,  # Admin que aprovou
+                        old_data={"role": old_role},
+                        metadata={
+                            "change_request_id": str(change_request.id),
+                            "approved_by_admin": request.user.email,
+                            "original_user": change_request.user.email,
+                            "justification": change_request.justification,
+                        },
+                    )
+
+            # Apply other profile changes
+            elif (
+                change_request.request_type
+                == SensibleDataChangeRequest.RequestType.SENSITIVE_PROFILE_CHANGE
+            ):
+                requested_changes = change_request.requested_changes
+                old_data = {}
+                new_data = {}
+
+                # Capturar dados antigos e aplicar novos
+                for field, new_value in requested_changes.items():
+                    if hasattr(change_request.user, field):
+                        old_data[field] = getattr(change_request.user, field)
+                        setattr(change_request.user, field, new_value)
+                        new_data[field] = new_value
+
+                if old_data and new_data:
+                    # Desabilitar auditoria temporariamente para evitar log automático
+                    change_request.user.__audit__ = False
+                    change_request.user.save()
+                    # Reabilitar auditoria
+                    change_request.user.__audit__ = True
+
+                    # Log manual da aprovação de mudanças de perfil pelo admin
+                    AuditService.log_update(
+                        content_object=change_request.user,
+                        user=request.user,  # Admin que aprovou
+                        old_data=old_data,
+                        metadata={
+                            "change_request_id": str(change_request.id),
+                            "approved_by_admin": request.user.email,
+                            "original_user": change_request.user.email,
+                            "justification": change_request.justification,
+                        },
+                    )
         else:
             change_request.status = SensibleDataChangeRequest.RequestStatus.REJECTED
 

@@ -67,8 +67,8 @@ class TOTPDevice(Device):
 
 
 class SensibleDataChangeRequest(models.Model):
-    # Flag para auditoria automática
-    __audit__ = True
+    # Flag para auditoria automática - desabilitado pois este modelo serve como seu próprio audit trail
+    __audit__ = False
 
     class RequestType(models.TextChoices):
         EMAIL_CHANGE = "email_change", _("Email Change")
