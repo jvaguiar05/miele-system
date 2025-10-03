@@ -222,7 +222,7 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     serializer_class = ClientAnnotationSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["client", "user"]
+    filterset_fields = ["user_id"]
     search_fields = ["content", "client__razao_social"]
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]
@@ -270,7 +270,7 @@ class ClientAttachedFileViewSet(viewsets.ModelViewSet):
     serializer_class = ClientAttachedFileSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["client", "uploaded_by", "file_type"]
+    filterset_fields = ["file_type", "uploaded_by_id"]
     search_fields = ["file_name", "description", "client__razao_social"]
     ordering_fields = ["created_at", "file_name"]
     ordering = ["-created_at"]

@@ -152,6 +152,7 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         tags=["PER/DCOMPs"],
         summary="Listar arquivos anexados ao PER/DCOMP",
         description="Lista todos os arquivos anexados a um PER/DCOMP específico.",
+        operation_id="list_perdcomp_attached_files",
         responses={
             200: PerDcompAttachedFileSerializer(many=True),
             404: OpenApiResponse(description="PER/DCOMP não encontrado"),
@@ -210,6 +211,7 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         tags=["PER/DCOMPs"],
         summary="Listar anotações do PER/DCOMP",
         description="Lista todas as anotações de um PER/DCOMP específico.",
+        operation_id="list_perdcomp_annotations",
         responses={
             200: PerDcompAnnotationSerializer(many=True),
             404: OpenApiResponse(description="PER/DCOMP não encontrado"),

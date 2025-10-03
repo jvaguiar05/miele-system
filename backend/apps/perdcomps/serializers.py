@@ -183,12 +183,12 @@ class PerDcompBasicSerializer(serializers.ModelSerializer):
         model = PerDcomp
         fields = [
             "id",
-            "numero_protocolo",
-            "tipo_solicitacao",
+            "numero_perdcomp",
+            "tributo_pedido",
             "status",
             "client_name",
-            "valor_solicitado",
-            "data_ocorrencia",
+            "valor_pedido",
+            "data_vencimento",
             "created_at",
         ]
         read_only_fields = ["id", "client_name", "created_at"]
@@ -203,11 +203,11 @@ class PerDcompSensitiveSerializer(serializers.ModelSerializer):
         model = PerDcomp
         fields = [
             "id",
-            "numero_protocolo",
-            "valor_solicitado",
-            "valor_aprovado",
+            "processo_protocolo",
+            "valor_pedido",
+            "valor_compensado",
             "status",
-            "data_limite_analise",
-            "data_aprovacao",
+            "data_vencimento",
+            "data_transmissao",
         ]
         read_only_fields = ["id", "data_aprovacao"]
