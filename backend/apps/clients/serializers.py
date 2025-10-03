@@ -1,5 +1,13 @@
 from rest_framework import serializers
-from .models import Client, Address, ClientAnnotation, ClientAttachedFile
+from django.contrib.contenttypes.models import ContentType
+from .models import Client, Address
+from common.shared.models import Annotation, AttachedFile
+from common.shared.serializers import (
+    AnnotationSerializer,
+    AttachedFileSerializer,
+    AnnotationBasicSerializer,
+    AttachedFileBasicSerializer,
+)
 
 
 class AddressSerializer(serializers.ModelSerializer):
@@ -24,96 +32,25 @@ class AddressSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class ClientAnnotationSerializer(serializers.ModelSerializer):
-    """Serializer para ClientAnnotation."""
+# Aliases para compatibilidade (usando modelos compartilhados)
+class ClientAnnotationSerializer(AnnotationSerializer):
+    """Serializer para anotações de clientes (alias para AnnotationSerializer)."""
 
-    id = serializers.UUIDField(source="public_id", read_only=True)
-    client_id = serializers.UUIDField(write_only=True)
-    user_name = serializers.CharField(source="user.username", read_only=True)
-    client_name = serializers.CharField(source="client.razao_social", read_only=True)
-
-    class Meta:
-        model = ClientAnnotation
-        fields = [
-            "id",
-            "client_id",
-            "user_name",
-            "client_name",
-            "content",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "user_name",
-            "client_name",
-            "created_at",
-            "updated_at",
-        ]
-
-    def validate_client_id(self, value):
-        """Validar e converter client_id de UUID para int."""
-        try:
-            client = Client.objects.get(public_id=value, deleted_at__isnull=True)
-            return client.id  # Retorna o ID interno
-        except Client.DoesNotExist:
-            raise serializers.ValidationError("Cliente não encontrado.")
-
-    def create(self, validated_data):
-        """Criar anotação com user_id automaticamente."""
-        validated_data["user_id"] = self.context["request"].user.id
-        # client_id já foi convertido para int no validate_client_id
-        validated_data["client_id"] = validated_data.pop("client_id")
-        return super().create(validated_data)
+    def validate(self, attrs):
+        # Forçar entity_type para client se não informado
+        if "entity_type" not in attrs and "entity_id" in attrs:
+            attrs["entity_type"] = "client"
+        return super().validate(attrs)
 
 
-class ClientAttachedFileSerializer(serializers.ModelSerializer):
-    """Serializer para ClientAttachedFile."""
+class ClientAttachedFileSerializer(AttachedFileSerializer):
+    """Serializer para arquivos de clientes (alias para AttachedFileSerializer)."""
 
-    id = serializers.UUIDField(source="public_id", read_only=True)
-    client_id = serializers.UUIDField(write_only=True)
-    uploaded_by_name = serializers.CharField(
-        source="uploaded_by.username", read_only=True
-    )
-    client_name = serializers.CharField(source="client.razao_social", read_only=True)
-
-    class Meta:
-        model = ClientAttachedFile
-        fields = [
-            "id",
-            "client_id",
-            "client_name",
-            "file_name",
-            "file_url",
-            "file_size",
-            "file_type",
-            "description",
-            "uploaded_by_name",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "client_name",
-            "uploaded_by_name",
-            "created_at",
-            "updated_at",
-        ]
-
-    def validate_client_id(self, value):
-        """Validar e converter client_id de UUID para int."""
-        try:
-            client = Client.objects.get(public_id=value, deleted_at__isnull=True)
-            return client.id  # Retorna o ID interno
-        except Client.DoesNotExist:
-            raise serializers.ValidationError("Cliente não encontrado.")
-
-    def create(self, validated_data):
-        """Criar arquivo anexado com uploaded_by_id automaticamente."""
-        validated_data["uploaded_by_id"] = self.context["request"].user.id
-        # client_id já foi convertido para int no validate_client_id
-        validated_data["client_id"] = validated_data.pop("client_id")
-        return super().create(validated_data)
+    def validate(self, attrs):
+        # Forçar entity_type para client se não informado
+        if "entity_type" not in attrs and "entity_id" in attrs:
+            attrs["entity_type"] = "client"
+        return super().validate(attrs)
 
 
 class ClientSerializer(serializers.ModelSerializer):

@@ -10,7 +10,8 @@ from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
 
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
-from .models import Client, Address, ClientAnnotation, ClientAttachedFile
+from .models import Client, Address
+from common.shared.models import Annotation, AttachedFile
 from .serializers import (
     ClientSerializer,
     ClientBasicSerializer,
@@ -228,7 +229,12 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filtrar apenas anotações não excluídas."""
-        return ClientAnnotation.objects.filter(deleted_at__isnull=True)
+        from django.contrib.contenttypes.models import ContentType
+
+        client_ct = ContentType.objects.get(app_label="clients", model="client")
+        return Annotation.objects.filter(
+            deleted_at__isnull=True, content_type=client_ct
+        )
 
     def get_object(self):
         """Buscar objeto por public_id em vez de id."""
@@ -238,7 +244,7 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
 
         try:
             obj = queryset.get(public_id=lookup_value)
-        except ClientAnnotation.DoesNotExist:
+        except Annotation.DoesNotExist:
             from django.http import Http404
 
             raise Http404("Anotação não encontrada.")
@@ -271,7 +277,12 @@ class ClientAttachedFileViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filtrar apenas arquivos não excluídos."""
-        return ClientAttachedFile.objects.filter(deleted_at__isnull=True)
+        from django.contrib.contenttypes.models import ContentType
+
+        client_ct = ContentType.objects.get(app_label="clients", model="client")
+        return AttachedFile.objects.filter(
+            deleted_at__isnull=True, content_type=client_ct
+        )
 
     def get_object(self):
         """Buscar objeto por public_id em vez de id."""
@@ -281,7 +292,7 @@ class ClientAttachedFileViewSet(viewsets.ModelViewSet):
 
         try:
             obj = queryset.get(public_id=lookup_value)
-        except ClientAttachedFile.DoesNotExist:
+        except AttachedFile.DoesNotExist:
             from django.http import Http404
 
             raise Http404("Arquivo não encontrado.")

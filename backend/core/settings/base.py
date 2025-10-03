@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     # Common modules
     "common.audit",
     "common.approvals",
+    "common.shared",
 ]
 
 MIDDLEWARE = [

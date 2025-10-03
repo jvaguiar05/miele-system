@@ -1,101 +1,34 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
-from .models import PerDcomp, PerDcompAttachedFile, PerDcompAnnotation
+from .models import PerDcomp
+from common.shared.models import Annotation, AttachedFile
+from common.shared.serializers import (
+    AnnotationSerializer,
+    AttachedFileSerializer,
+    AnnotationBasicSerializer,
+    AttachedFileBasicSerializer,
+)
 
 
-class PerDcompAttachedFileSerializer(serializers.ModelSerializer):
-    """Serializer para PerDcompAttachedFile."""
+# Aliases para compatibilidade (usando modelos compartilhados)
+class PerDcompAnnotationSerializer(AnnotationSerializer):
+    """Serializer para anotações de PER/DCOMPs (alias para AnnotationSerializer)."""
 
-    id = serializers.UUIDField(source="public_id", read_only=True)
-    perdcomp_id = serializers.UUIDField(write_only=True)
-    perdcomp_numero = serializers.CharField(
-        source="perdcomp.numero_perdcomp", read_only=True
-    )
-    uploaded_by_name = serializers.CharField(
-        source="uploaded_by.username", read_only=True
-    )
-
-    class Meta:
-        model = PerDcompAttachedFile
-        fields = [
-            "id",
-            "perdcomp_id",
-            "perdcomp_numero",
-            "tipo_arquivo",
-            "file_name",
-            "file_url",
-            "file_size",
-            "file_type",
-            "description",
-            "uploaded_by_name",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "perdcomp_numero",
-            "uploaded_by_name",
-            "created_at",
-            "updated_at",
-        ]
-
-    def validate_perdcomp_id(self, value):
-        """Validar e converter perdcomp_id de UUID para int."""
-        try:
-            perdcomp = PerDcomp.objects.get(public_id=value, deleted_at__isnull=True)
-            return perdcomp.id  # Retorna o ID interno
-        except PerDcomp.DoesNotExist:
-            raise serializers.ValidationError("PER/DCOMP não encontrado.")
-
-    def create(self, validated_data):
-        """Criar arquivo anexado com uploaded_by_id automaticamente."""
-        validated_data["uploaded_by_id"] = self.context["request"].user.id
-        validated_data["perdcomp_id"] = validated_data.pop("perdcomp_id")
-        return super().create(validated_data)
+    def validate(self, attrs):
+        # Forçar entity_type para perdcomp se não informado
+        if "entity_type" not in attrs and "entity_id" in attrs:
+            attrs["entity_type"] = "perdcomp"
+        return super().validate(attrs)
 
 
-class PerDcompAnnotationSerializer(serializers.ModelSerializer):
-    """Serializer para PerDcompAnnotation."""
+class PerDcompAttachedFileSerializer(AttachedFileSerializer):
+    """Serializer para arquivos de PER/DCOMPs (alias para AttachedFileSerializer)."""
 
-    id = serializers.UUIDField(source="public_id", read_only=True)
-    perdcomp_id = serializers.UUIDField(write_only=True)
-    perdcomp_numero = serializers.CharField(
-        source="perdcomp.numero_perdcomp", read_only=True
-    )
-    user_name = serializers.CharField(source="user.username", read_only=True)
-
-    class Meta:
-        model = PerDcompAnnotation
-        fields = [
-            "id",
-            "perdcomp_id",
-            "perdcomp_numero",
-            "user_name",
-            "content",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "perdcomp_numero",
-            "user_name",
-            "created_at",
-            "updated_at",
-        ]
-
-    def validate_perdcomp_id(self, value):
-        """Validar e converter perdcomp_id de UUID para int."""
-        try:
-            perdcomp = PerDcomp.objects.get(public_id=value, deleted_at__isnull=True)
-            return perdcomp.id  # Retorna o ID interno
-        except PerDcomp.DoesNotExist:
-            raise serializers.ValidationError("PER/DCOMP não encontrado.")
-
-    def create(self, validated_data):
-        """Criar anotação com user_id automaticamente."""
-        validated_data["user_id"] = self.context["request"].user.id
-        validated_data["perdcomp_id"] = validated_data.pop("perdcomp_id")
-        return super().create(validated_data)
+    def validate(self, attrs):
+        # Forçar entity_type para perdcomp se não informado
+        if "entity_type" not in attrs and "entity_id" in attrs:
+            attrs["entity_type"] = "perdcomp"
+        return super().validate(attrs)
 
 
 class PerDcompSerializer(serializers.ModelSerializer):

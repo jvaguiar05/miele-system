@@ -10,7 +10,8 @@ from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
 
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
-from .models import PerDcomp, PerDcompAttachedFile, PerDcompAnnotation
+from .models import PerDcomp
+from common.shared.models import Annotation, AttachedFile
 from .serializers import (
     PerDcompSerializer,
     PerDcompBasicSerializer,
@@ -164,8 +165,11 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     def list_attached_files(self, request, pk=None):
         """Listar arquivos anexados ao PER/DCOMP."""
         instance = self.get_object()
-        files = PerDcompAttachedFile.objects.filter(
-            perdcomp_id=instance.id, deleted_at__isnull=True
+        from django.contrib.contenttypes.models import ContentType
+
+        perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
+        files = AttachedFile.objects.filter(
+            content_type=perdcomp_ct, object_id=instance.id, deleted_at__isnull=True
         )
         serializer = PerDcompAttachedFileSerializer(files, many=True)
         return Response(serializer.data)
@@ -191,7 +195,8 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         """Anexar arquivo ao PER/DCOMP."""
         instance = self.get_object()
         data = request.data.copy()
-        data["perdcomp_id"] = instance.public_id
+        data["entity_id"] = instance.public_id
+        data["entity_type"] = "perdcomp"
 
         serializer = PerDcompAttachedFileSerializer(
             data=data, context={"request": request}
@@ -218,8 +223,11 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     def list_annotations(self, request, pk=None):
         """Listar anotações do PER/DCOMP."""
         instance = self.get_object()
-        annotations = PerDcompAnnotation.objects.filter(
-            perdcomp_id=instance.id, deleted_at__isnull=True
+        from django.contrib.contenttypes.models import ContentType
+
+        perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
+        annotations = Annotation.objects.filter(
+            content_type=perdcomp_ct, object_id=instance.id, deleted_at__isnull=True
         ).order_by("-created_at")
         serializer = PerDcompAnnotationSerializer(annotations, many=True)
         return Response(serializer.data)
@@ -245,7 +253,8 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         """Adicionar anotação ao PER/DCOMP."""
         instance = self.get_object()
         data = request.data.copy()
-        data["perdcomp_id"] = instance.public_id
+        data["entity_id"] = instance.public_id
+        data["entity_type"] = "perdcomp"
 
         serializer = PerDcompAnnotationSerializer(
             data=data, context={"request": request}
@@ -267,13 +276,18 @@ class PerDcompAttachedFileViewSet(viewsets.ModelViewSet):
     serializer_class = PerDcompAttachedFileSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ["tipo_arquivo", "file_type"]
+    filterset_fields = ["file_type", "mime_type"]
     ordering_fields = ["created_at", "file_size"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
         """Filtrar por arquivos não deletados."""
-        return PerDcompAttachedFile.objects.filter(deleted_at__isnull=True)
+        from django.contrib.contenttypes.models import ContentType
+
+        perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
+        return AttachedFile.objects.filter(
+            deleted_at__isnull=True, content_type=perdcomp_ct
+        )
 
     def get_object(self):
         """Buscar objeto por public_id."""
@@ -282,7 +296,7 @@ class PerDcompAttachedFileViewSet(viewsets.ModelViewSet):
 
         try:
             obj = queryset.get(public_id=lookup_value)
-        except PerDcompAttachedFile.DoesNotExist:
+        except AttachedFile.DoesNotExist:
             from django.http import Http404
 
             raise Http404("Arquivo não encontrado.")
@@ -315,7 +329,12 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filtrar por anotações não deletadas."""
-        return PerDcompAnnotation.objects.filter(deleted_at__isnull=True)
+        from django.contrib.contenttypes.models import ContentType
+
+        perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
+        return Annotation.objects.filter(
+            deleted_at__isnull=True, content_type=perdcomp_ct
+        )
 
     def get_object(self):
         """Buscar objeto por public_id."""
@@ -324,7 +343,7 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
 
         try:
             obj = queryset.get(public_id=lookup_value)
-        except PerDcompAnnotation.DoesNotExist:
+        except Annotation.DoesNotExist:
             from django.http import Http404
 
             raise Http404("Anotação não encontrada.")
