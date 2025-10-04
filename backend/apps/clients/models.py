@@ -139,9 +139,13 @@ class Client(models.Model):
         max_length=20,
         choices=ClientStatus.choices,
         default=ClientStatus.PENDING,
+        null=True,
+        blank=True,
         help_text="Status do cliente",
     )
-    is_active = models.BooleanField(default=True, help_text="Cliente ativo no sistema")
+    is_active = models.BooleanField(
+        default=True, null=True, blank=True, help_text="Cliente ativo no sistema"
+    )
 
     # Relacionamentos - FK usando ID interno (BigInt)
     address_id = models.BigIntegerField(

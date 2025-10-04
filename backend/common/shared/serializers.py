@@ -60,8 +60,8 @@ class AnnotationSerializer(serializers.ModelSerializer):
 
         # Mapear tipo para modelo
         entity_map = {
-            "client": ("apps.clients", "Client"),
-            "perdcomp": ("apps.perdcomps", "PerDcomp"),
+            "client": ("clients", "Client"),
+            "perdcomp": ("perdcomps", "PerDcomp"),
         }
 
         if entity_type not in entity_map:
@@ -172,8 +172,8 @@ class AttachedFileSerializer(serializers.ModelSerializer):
 
         # Mapear tipo para modelo
         entity_map = {
-            "client": ("apps.clients", "Client"),
-            "perdcomp": ("apps.perdcomps", "PerDcomp"),
+            "client": ("clients", "Client"),
+            "perdcomp": ("perdcomps", "PerDcomp"),
         }
 
         if entity_type not in entity_map:

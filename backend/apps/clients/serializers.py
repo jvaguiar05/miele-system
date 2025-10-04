@@ -34,22 +34,82 @@ class AddressSerializer(serializers.ModelSerializer):
 
 # Aliases para compatibilidade (usando modelos compartilhados)
 class ClientAnnotationSerializer(AnnotationSerializer):
-    """Serializer para anotações de clientes (alias para AnnotationSerializer)."""
+    """Serializer para anotações de clientes."""
+
+    # Substituir entity_type e entity_id por client_id mais simples
+    entity_type = None  # Não expor este campo
+    entity_id = None  # Não expor este campo
+    client_id = serializers.UUIDField(
+        write_only=True, help_text="UUID do cliente para associar a anotação"
+    )
+
+    class Meta(AnnotationSerializer.Meta):
+        fields = [
+            "id",
+            "client_id",  # Substituir entity_type e entity_id
+            "entity_name",
+            "user_name",
+            "content",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "entity_name",
+            "user_name",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate(self, attrs):
-        # Forçar entity_type para client se não informado
-        if "entity_type" not in attrs and "entity_id" in attrs:
+        # Converter client_id para entity_type e entity_id
+        if "client_id" in attrs:
             attrs["entity_type"] = "client"
+            attrs["entity_id"] = attrs.pop("client_id")
         return super().validate(attrs)
 
 
 class ClientAttachedFileSerializer(AttachedFileSerializer):
-    """Serializer para arquivos de clientes (alias para AttachedFileSerializer)."""
+    """Serializer para arquivos de clientes."""
+
+    # Substituir entity_type e entity_id por client_id mais simples
+    entity_type = None  # Não expor este campo
+    entity_id = None  # Não expor este campo
+    client_id = serializers.UUIDField(
+        write_only=True, help_text="UUID do cliente para associar o arquivo"
+    )
+
+    class Meta(AttachedFileSerializer.Meta):
+        fields = [
+            "id",
+            "client_id",  # Substituir entity_type e entity_id
+            "entity_name",
+            "uploaded_by_name",
+            "file_name",
+            "description",
+            "file_type",
+            "file_size",
+            "mime_type",
+            "file_url",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "entity_name",
+            "uploaded_by_name",
+            "file_size",
+            "mime_type",
+            "file_url",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate(self, attrs):
-        # Forçar entity_type para client se não informado
-        if "entity_type" not in attrs and "entity_id" in attrs:
+        # Converter client_id para entity_type e entity_id
+        if "client_id" in attrs:
             attrs["entity_type"] = "client"
+            attrs["entity_id"] = attrs.pop("client_id")
         return super().validate(attrs)
 
 
@@ -59,6 +119,13 @@ class ClientSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source="public_id", read_only=True)
     address_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     address = AddressSerializer(read_only=True)
+    client_status = serializers.ChoiceField(
+        choices=Client.ClientStatus.choices,
+        required=False,
+        default=Client.ClientStatus.PENDING,
+        allow_null=True,
+    )
+    is_active = serializers.BooleanField(required=False, default=True, allow_null=True)
 
     class Meta:
         model = Client

@@ -12,22 +12,83 @@ from common.shared.serializers import (
 
 # Aliases para compatibilidade (usando modelos compartilhados)
 class PerDcompAnnotationSerializer(AnnotationSerializer):
-    """Serializer para anotações de PER/DCOMPs (alias para AnnotationSerializer)."""
+    """Serializer para anotações de PER/DCOMPs."""
+
+    # Substituir entity_type e entity_id por perdcomp_id mais simples
+    entity_type = None  # Não expor este campo
+    entity_id = None  # Não expor este campo
+    perdcomp_id = serializers.UUIDField(
+        write_only=True, help_text="UUID do PER/DCOMP para associar a anotação"
+    )
+
+    class Meta(AnnotationSerializer.Meta):
+        fields = [
+            "id",
+            "perdcomp_id",  # Substituir entity_type e entity_id
+            "entity_name",
+            "user_name",
+            "content",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "entity_name",
+            "user_name",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate(self, attrs):
-        # Forçar entity_type para perdcomp se não informado
-        if "entity_type" not in attrs and "entity_id" in attrs:
+        # Converter perdcomp_id para entity_type e entity_id
+        if "perdcomp_id" in attrs:
             attrs["entity_type"] = "perdcomp"
+            attrs["entity_id"] = attrs.pop("perdcomp_id")
         return super().validate(attrs)
 
 
 class PerDcompAttachedFileSerializer(AttachedFileSerializer):
-    """Serializer para arquivos de PER/DCOMPs (alias para AttachedFileSerializer)."""
+    """Serializer para arquivos de PER/DCOMPs."""
+
+    # Substituir entity_type e entity_id por perdcomp_id mais simples
+    entity_type = None  # Não expor este campo
+    entity_id = None  # Não expor este campo
+    perdcomp_id = serializers.UUIDField(
+        write_only=True, help_text="UUID do PER/DCOMP para associar o arquivo"
+    )
+
+    class Meta(AttachedFileSerializer.Meta):
+        fields = [
+            "id",
+            "perdcomp_id",  # Substituir entity_type e entity_id
+            "entity_name",
+            "uploaded_by_name",
+            "file_name",
+            "description",
+            "file_type",
+            "file_size",
+            "mime_type",
+            "file_url",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "entity_name",
+            "uploaded_by_name",
+            "file_size",
+            "mime_type",
+            "file_url",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate(self, attrs):
-        # Forçar entity_type para perdcomp se não informado
-        if "entity_type" not in attrs and "entity_id" in attrs:
+        # Converter perdcomp_id para entity_type e entity_id
+        if "perdcomp_id" in attrs:
             attrs["entity_type"] = "perdcomp"
+            attrs["entity_id"] = attrs.pop("perdcomp_id")
+        return super().validate(attrs)
         return super().validate(attrs)
 
 

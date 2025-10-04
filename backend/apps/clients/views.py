@@ -20,7 +20,10 @@ from .serializers import (
     ClientAnnotationSerializer,
     ClientAttachedFileSerializer,
 )
-from .permissions import ClientPermissions
+from common.shared.permissions import (
+    IsOwnerOrAdminForAnnotations,
+    IsOwnerOrAdminForAttachedFiles,
+)
 
 
 class PingView(APIView):
@@ -43,6 +46,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     """
 
     serializer_class = ClientSerializer
+    lookup_field = "public_id"
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["is_active"]
     search_fields = ["cnpj", "razao_social", "nome_fantasia"]
@@ -57,13 +61,13 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         return Client.objects.filter(deleted_at__isnull=True)
 
     def get_object(self):
-        """Buscar objeto por public_id em vez de id."""
+        """Buscar objeto por public_id."""
         queryset = self.filter_queryset(self.get_queryset())
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         lookup_value = self.kwargs[lookup_url_kwarg]
 
         try:
-            obj = queryset.get(public_id=lookup_value)
+            obj = queryset.get(**{self.lookup_field: lookup_value})
         except Client.DoesNotExist:
             from django.http import Http404
 
@@ -181,6 +185,7 @@ class AddressViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = AddressSerializer
+    lookup_field = "public_id"
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["uf", "municipio"]
@@ -193,13 +198,13 @@ class AddressViewSet(viewsets.ModelViewSet):
         return Address.objects.filter(deleted_at__isnull=True)
 
     def get_object(self):
-        """Buscar objeto por public_id em vez de id."""
+        """Buscar objeto por public_id."""
         queryset = self.filter_queryset(self.get_queryset())
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         lookup_value = self.kwargs[lookup_url_kwarg]
 
         try:
-            obj = queryset.get(public_id=lookup_value)
+            obj = queryset.get(**{self.lookup_field: lookup_value})
         except Address.DoesNotExist:
             from django.http import Http404
 
@@ -220,30 +225,38 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = ClientAnnotationSerializer
-    permission_classes = [IsAuthenticated]
+    lookup_field = "public_id"
+    permission_classes = [IsOwnerOrAdminForAnnotations]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["user_id"]
-    search_fields = ["content", "client__razao_social"]
+    search_fields = ["content"]
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Filtrar apenas anotações não excluídas."""
+        """Filtrar apenas anotações não excluídas do usuário (ou todas se admin)."""
         from django.contrib.contenttypes.models import ContentType
+        from common.permissions import IsAdminUser
 
         client_ct = ContentType.objects.get(app_label="clients", model="client")
-        return Annotation.objects.filter(
+        queryset = Annotation.objects.filter(
             deleted_at__isnull=True, content_type=client_ct
         )
 
+        # Se não for admin, filtrar apenas anotações do usuário
+        if not IsAdminUser().has_permission(self.request, self):
+            queryset = queryset.filter(user_id=self.request.user.id)
+
+        return queryset
+
     def get_object(self):
-        """Buscar objeto por public_id em vez de id."""
+        """Buscar objeto por public_id."""
         queryset = self.filter_queryset(self.get_queryset())
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         lookup_value = self.kwargs[lookup_url_kwarg]
 
         try:
-            obj = queryset.get(public_id=lookup_value)
+            obj = queryset.get(**{self.lookup_field: lookup_value})
         except Annotation.DoesNotExist:
             from django.http import Http404
 
@@ -268,30 +281,38 @@ class ClientAttachedFileViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = ClientAttachedFileSerializer
-    permission_classes = [IsAuthenticated]
+    lookup_field = "public_id"
+    permission_classes = [IsOwnerOrAdminForAttachedFiles]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["file_type", "uploaded_by_id"]
-    search_fields = ["file_name", "description", "client__razao_social"]
+    search_fields = ["file_name", "description"]
     ordering_fields = ["created_at", "file_name"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Filtrar apenas arquivos não excluídos."""
+        """Filtrar apenas arquivos não excluídos do usuário (ou todos se admin)."""
         from django.contrib.contenttypes.models import ContentType
+        from common.permissions import IsAdminUser
 
         client_ct = ContentType.objects.get(app_label="clients", model="client")
-        return AttachedFile.objects.filter(
+        queryset = AttachedFile.objects.filter(
             deleted_at__isnull=True, content_type=client_ct
         )
 
+        # Se não for admin, filtrar apenas arquivos do usuário
+        if not IsAdminUser().has_permission(self.request, self):
+            queryset = queryset.filter(uploaded_by_id=self.request.user.id)
+
+        return queryset
+
     def get_object(self):
-        """Buscar objeto por public_id em vez de id."""
+        """Buscar objeto por public_id."""
         queryset = self.filter_queryset(self.get_queryset())
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         lookup_value = self.kwargs[lookup_url_kwarg]
 
         try:
-            obj = queryset.get(public_id=lookup_value)
+            obj = queryset.get(**{self.lookup_field: lookup_value})
         except AttachedFile.DoesNotExist:
             from django.http import Http404
 
