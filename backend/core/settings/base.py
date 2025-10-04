@@ -174,24 +174,44 @@ SPECTACULAR_SETTINGS = {
     "SECURITY": [{"BearerAuth": []}],
     "TAGS": [
         {
-            "name": "Auth",
+            "name": "Autenticação",
             "description": "Endpoints de autenticação e autorização",
         },
         {
-            "name": "Users",
+            "name": "Admin",
+            "description": "Endpoints administrativos que requerem privilégios de admin",
+        },
+        {
+            "name": "Usuários",
             "description": "Endpoints de gerenciamento de usuários",
         },
         {
-            "name": "Admin",
-            "description": "Endpoints administrativos (requer privilégios de admin)",
+            "name": "Clientes",
+            "description": "Endpoints relacionados a clientes",
         },
         {
-            "name": "Clients",
-            "description": "Endpoints relacionados a clientes",
+            "name": "Endereços",
+            "description": "Endpoints relacionados a endereços de clientes",
+        },
+        {
+            "name": "Clientes - Anotações",
+            "description": "Endpoints relacionados às anotações feitas por usuários em clientes",
+        },
+        {
+            "name": "Clientes - Arquivos",
+            "description": "Endpoints relacionados aos arquivos anexados a clientes",
         },
         {
             "name": "PER/DCOMPs",
             "description": "Endpoints relacionados a PER/DCOMPs (Perdas e Compensações)",
+        },
+        {
+            "name": "PER/DCOMPs - Anotações",
+            "description": "Endpoints relacionados às anotações dos PER/DCOMPs",
+        },
+        {
+            "name": "PER/DCOMPs - Arquivos",
+            "description": "Endpoints relacionados aos arquivos anexados aos PER/DCOMPs",
         },
     ],
     "SWAGGER_UI_SETTINGS": {

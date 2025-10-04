@@ -32,7 +32,7 @@ class PingView(APIView):
 
 
 @extend_schema(
-    tags=["Clients"],
+    tags=["Clientes"],
     summary="Gerenciamento de clientes",
     description="Endpoints para CRUD completo de clientes com aprovação automática para campos sensíveis.",
 )
@@ -89,7 +89,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         instance.save()
 
     @extend_schema(
-        tags=["Clients"],
+        tags=["Clientes"],
         summary="Atualizar anotações do cliente (DEPRECATED)",
         description="DEPRECATED: Use o endpoint de ClientAnnotationViewSet. Este endpoint será removido em versões futuras.",
         request=ClientAnnotationSerializer,
@@ -120,7 +120,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         )
 
     @extend_schema(
-        tags=["Clients"],
+        tags=["Clientes"],
         summary="Atualizar dados sensíveis do cliente",
         description="Atualiza dados sensíveis que requerem aprovação administrativa. Cria automaticamente uma solicitação de aprovação.",
         request=ClientSensitiveSerializer,
@@ -171,7 +171,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
 
 
 @extend_schema(
-    tags=["Addresses"],
+    tags=["Endereços"],
     summary="Gerenciamento de endereços",
     description="Endpoints para CRUD de endereços de clientes.",
 )
@@ -210,7 +210,7 @@ class AddressViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema(
-    tags=["Client Annotations"],
+    tags=["Clientes - Anotações"],
     summary="Gerenciamento de anotações de clientes",
     description="Endpoints para CRUD de anotações feitas por usuários em clientes.",
 )
@@ -258,7 +258,7 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema(
-    tags=["Client Attached Files"],
+    tags=["Clientes - Arquivos"],
     summary="Gerenciamento de arquivos anexados a clientes",
     description="Endpoints para CRUD de arquivos anexados a clientes.",
 )

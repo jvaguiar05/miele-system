@@ -54,7 +54,7 @@ class PingView(APIView):
     permission_classes = []
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Verificação de saúde da API",
         description="Endpoint simples para verificar se a API está funcionando. Não requer autenticação.",
         responses={
@@ -78,7 +78,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Autenticação de usuário",
         description="""
         Realiza login do usuário e retorna tokens JWT (access e refresh).
@@ -147,7 +147,7 @@ class CustomTokenRefreshView(TokenRefreshView):
     throttle_classes = [AuthRefreshThrottle]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Renovação de token JWT",
         description="""
         Renova o access token utilizando um refresh token válido.
@@ -205,7 +205,7 @@ class LogoutView(APIView):
     throttle_classes = [UserRateThrottle]  # Standard user throttling for logout
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Logout do usuário",
         description="""
         Realiza logout do usuário adicionando o refresh token à blacklist.
@@ -290,7 +290,7 @@ class RBACView(APIView):
     permission_classes = [IsEmployeeOrAdmin]  # Employee or Admin can check permissions
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Verificação de permissões RBAC",
         description="""
         Retorna as permissões e capacidades do usuário autenticado baseadas em seu role.
@@ -396,7 +396,7 @@ class UserProfileView(APIView):
     ]  # Users can view/edit own profile, admins can edit any
 
     @extend_schema(
-        tags=["Users"],
+        tags=["Usuários"],
         summary="Visualizar perfil do usuário",
         description="""
         Retorna os dados do perfil do usuário autenticado.
@@ -433,7 +433,7 @@ class UserProfileView(APIView):
         return Response(serializer.data)
 
     @extend_schema(
-        tags=["Users"],
+        tags=["Usuários"],
         summary="Atualizar perfil do usuário",
         description="""
         Atualiza os dados do perfil do usuário autenticado.
@@ -514,7 +514,7 @@ class ChangePasswordView(APIView):
     parser_classes = [JSONParser]
 
     @extend_schema(
-        tags=["Users"],
+        tags=["Usuários"],
         summary="Alterar senha do usuário",
         description="""
         Permite que o usuário altere sua senha fornecendo a senha atual e a nova senha.
@@ -658,7 +658,7 @@ class AuthThrottleView(APIView):
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Teste de throttling",
         description="""
         Endpoint de teste para verificar o funcionamento do rate limiting.
@@ -700,7 +700,7 @@ class TOTPEnrollView(APIView):
     throttle_classes = [SensitiveActionThrottle]  # Sensitive action throttling
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Inscrição em 2FA TOTP",
         description="""
         Configura autenticação de dois fatores (2FA) baseada em TOTP para o usuário.
@@ -775,7 +775,7 @@ class UserRegistrationView(APIView):
     throttle_classes = [AuthRegisterThrottle]  # Restrictive throttling for registration
 
     @extend_schema(
-        tags=["Auth"],
+        tags=["Autenticação"],
         summary="Registro de novo usuário",
         description="""
         Registra um novo usuário no sistema. O usuário ficará com status "pendente" até aprovação administrativa.
@@ -867,7 +867,7 @@ class UserDeactivateView(APIView):
     ]  # Users can deactivate own account, admins can deactivate any
 
     @extend_schema(
-        tags=["Users"],
+        tags=["Usuários"],
         request=UserDeleteSerializer,
         responses={
             200: OpenApiResponse(description="User account deactivated successfully"),
@@ -935,7 +935,7 @@ class EmailChangeRequestView(APIView):
     throttle_classes = [SensitiveActionThrottle]  # Sensitive action throttling
 
     @extend_schema(
-        tags=["Users"],
+        tags=["Usuários"],
         request=EmailChangeRequestSerializer,
         responses={
             201: OpenApiResponse(
@@ -1062,7 +1062,7 @@ class MyChangeRequestsView(APIView):
     serializer_class = SensibleDataChangeRequestSerializer
 
     @extend_schema(
-        tags=["Users"],
+        tags=["Usuários"],
         summary="Listar minhas solicitações de alteração",
         description="""
         Lista as solicitações de alteração de dados sensíveis do usuário autenticado.
