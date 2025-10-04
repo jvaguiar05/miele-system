@@ -45,6 +45,8 @@ seed:
 	python backend/manage.py runscript load_demo_data
 
 setup_database:
+	cd backend && python manage.py makemigrations
+	cd backend && python manage.py migrate
 	cd backend && python manage.py setup_roles
 	cd backend && python manage.py create_superuser_with_role \
 		--username miele-admin \
