@@ -54,6 +54,7 @@ setup_database:
 		--first-name Miele \
 		--last-name Admin \
 		--password mieleadminadmin
+	cd backend && python manage.py setup_test_user
 
 # ---- Quality ----
 
