@@ -22,8 +22,9 @@ class AuditLog(models.Model):
         APPROVAL_DENIED = "APPROVAL_DENIED", "Aprovação Negada"
         CUSTOM = "CUSTOM", "Ação Personalizada"
 
-    # Identificadores únicos
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Chave primária interna (BigInt) para performance máxima
+    id = models.BigAutoField(primary_key=True)
+    # ID de correlação para rastrear todas as ações de um request
     correlation_id = models.UUIDField(
         help_text="ID de correlação para rastrear todas as ações de um request"
     )

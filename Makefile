@@ -12,6 +12,9 @@ username ?=
 run:
 	python backend/manage.py runserver $(host):$(port)
 
+check:
+	python backend/manage.py check
+
 migrate:
 	python backend/manage.py migrate
 
@@ -42,6 +45,8 @@ seed:
 	python backend/manage.py runscript load_demo_data
 
 setup_database:
+	cd backend && python manage.py makemigrations
+	cd backend && python manage.py migrate
 	cd backend && python manage.py setup_roles
 	cd backend && python manage.py create_superuser_with_role \
 		--username miele-admin \
@@ -49,6 +54,7 @@ setup_database:
 		--first-name Miele \
 		--last-name Admin \
 		--password mieleadminadmin
+	cd backend && python manage.py setup_test_user
 
 # ---- Quality ----
 
