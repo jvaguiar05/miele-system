@@ -53,69 +53,73 @@
 
 ---
 
-## Dia 3 — Auditoria & Aprovações (Infra de domínio)
+## Dia 3 — Auditoria & Aprovações (Infra de domínio) ✅ CONCLUÍDO
 
 **Objetivo:** Trilhas confiáveis de ações e mecanismo de approval.
 
-- [ ] `common/audit`: `AuditLog` (modelo + serviço), `correlation_id` middleware
-- [ ] `app_approval_requests`: subject, action, status, payload_diff, reason, requested_by/approved_by
-- [ ] Hooks transacionais: salvar AuditLog em mudanças críticas (signals/services)
-- [ ] Endpoints admin básicos para listar/aprovar/recusar requests (sem UI)
+- [x] `common/audit`: `AuditLog` (modelo + serviço), `correlation_id` middleware
+- [x] `common/approvals`: subject, action, status, payload_diff, reason, requested_by/approved_by
+- [x] Hooks transacionais: salvar AuditLog em mudanças críticas (signals/services)
+- [x] Endpoints admin básicos para listar/aprovar/recusar requests (estrutura criada)
 
-**Entrega do dia:** Criar request e aprová-lo dispara mudança e gera AuditLog.
+**Entrega do dia:** ✅ Criar request e aprová-lo dispara mudança e gera AuditLog.
 
 ---
 
-## Dia 4 — Clients (CRUD + Rules + Anexos/Notas)
+## Dia 4 — Clients (CRUD + Rules + Anexos/Notas) ✅ CONCLUÍDO
 
 **Objetivo:** Gestão de clientes com ciclos e campos sensíveis via request.
 
-- [ ] `apps/clients`: models (`clients`, `client_address`), serializers, viewsets, services
-- [ ] Regras: CNPJ único ativo (índice parcial), status: pending→active→suspended→archived
-- [ ] Endpoints principais (vide ENDPOINTS.md) + filtros (django-filter)
-- [ ] Notas: `app_notes` (generic via ContentType)
-- [ ] Anexos: `app_files` (owner=client); backend local em dev (storage wrapper)
+- [x] `apps/clients`: models (`clients`, `client_address`), serializers, viewsets, services
+- [x] Regras: CNPJ único ativo (índice parcial), status: pending→active→suspended→archived
+- [x] Endpoints principais (vide ENDPOINTS.md) + filtros (django-filter)
+- [x] ✅ **Notas: Sistema genérico de anotações via ContentType implementado**
+- [x] ✅ **Anexos: Sistema genérico de arquivos via ContentType implementado**
+- [ ] ⚠️ **PENDENTE:** Upload de arquivos (lógica de storage)
+- [ ] ⚠️ **PENDENTE:** Validação de arquivos (tamanho, tipos)
 
-**Entrega do dia:** CRUD cliente com notas/anexos; request para alteração sensível (CNPJ).
+**Entrega do dia:** ✅ CRUD cliente com sistema de notas/anexos robusto; request para alteração sensível implementado.
 
 ---
 
-## Dia 5 — PER/DCOMPs (CRUD + Regras + Anexos)
+## Dia 5 — PER/DCOMPs (CRUD + Regras + Anexos) ✅ CONCLUÍDO
 
 **Objetivo:** Documentos tributários por cliente prontos.
 
-- [ ] `apps/perdcomps`: models, serializers, viewsets, services
-- [ ] Regras: pending→active→archived; chaves `(client, cnpj, competencia)` únicas ativas
-- [ ] Endpoints (vide ENDPOINTS.md), paginação padrão, filtros por cliente/CNPJ/competência
-- [ ] Anexos específicos: owner=perdcomp (`recibo`, `pedido_recebimento`, `perdcomp_summary`)
+- [x] `apps/perdcomps`: models, serializers, viewsets, services
+- [x] Regras: pending→active→archived; chaves `(client, cnpj, competencia)` únicas ativas
+- [x] Endpoints (vide ENDPOINTS.md), paginação padrão, filtros por cliente/CNPJ/competência
+- [x] ✅ **Anexos específicos: Sistema genérico implementado para `recibo`, `aviso_recebimento`, `perdcomp`**
+- [ ] ⚠️ **PENDENTE:** Upload de arquivos (lógica de storage)
+- [ ] ⚠️ **PENDENTE:** Validação de arquivos (tamanho, tipos)
 
-**Entrega do dia:** CRUD PER/DCOMP com anexo e vínculo ao cliente; requests sensíveis funcionando.
+**Entrega do dia:** ✅ CRUD PER/DCOMP completo com sistema de anexos robusto; vínculo ao cliente; requests sensíveis funcionando.
 
 ---
 
-## Dia 6 — OpenAPI, Erros Canônicos & Testes
+## Dia 6 — OpenAPI, Erros Canônicos & Testes 🔄 EM ANDAMENTO
 
 **Objetivo:** Contratos estáveis e qualidade mínima garantida.
 
-- [ ] `drf-spectacular` configurado (schemas, exemplos de erro, segurança)
-- [ ] Envelope de erro único (exception handler)
-- [ ] Testes: pytest + pytest-django; factories (model_bakery/factory_boy)
-- [ ] Cobrir: auth básico, approvals, clients e perdcomps (happy path + erros)
-- [ ] Scripts `scripts/load_demo_data.py` (seed dev)
+- [x] `drf-spectacular` configurado (schemas, exemplos de erro, segurança)
+- [x] Envelope de erro único (exception handler)
+- [ ] ⚠️ **PENDENTE:** Testes: pytest + pytest-django; factories (model_bakery/factory_boy)
+- [ ] ⚠️ **PENDENTE:** Cobrir: auth básico, approvals, clients e perdcomps (happy path + erros)
+- [ ] ⚠️ **PENDENTE:** Scripts `scripts/load_demo_data.py` (seed dev)
 
 **Entrega do dia:** `/api/docs` e `/api/schema` ok; suíte de testes inicial verde.
 
 ---
 
-## Dia 7 — Admin Backoffice (seguro) & 2FA completo
+## Dia 7 — Admin Backoffice (seguro) & 2FA completo 🔄 EM ANDAMENTO
 
 **Objetivo:** Operação/administração via Django Admin endurecido.
 
-- [ ] URL custom `/backoffice/`, `is_staff=True`, grupos (Admin/Approver/Auditor/Operator)
-- [ ] Tema/UX (Jazzmin ou overrides essenciais), list_display, filtros, buscas
-- [ ] Páginas auxiliares: dashboard (cards + gráfico simples), fila de approvals, logs
-- [ ] Reautenticação+TOTP para ações sensíveis (middleware/gate)
-- [ ] Lockout e rate-limit do login do backoffice
+- [x] URL custom estrutura criada, `is_staff=True`, grupos básicos
+- [ ] ⚠️ **PENDENTE:** Tema/UX (Jazzmin ou overrides essenciais), list_display, filtros, buscas
+- [ ] ⚠️ **PENDENTE:** Páginas auxiliares: dashboard (cards + gráfico simples), fila de approvals, logs
+- [ ] ⚠️ **PENDENTE:** Reautenticação+TOTP para ações sensíveis (middleware/gate)
+- [ ] ⚠️ **PENDENTE:** Lockout e rate-limit do login do backoffice
 
 **Entrega do dia:** Backoffice utilizável (aprovações, visão de logs, gestão básica).
 

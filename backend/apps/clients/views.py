@@ -37,12 +37,14 @@ class PingView(APIView):
 @extend_schema(
     tags=["Clientes"],
     summary="Gerenciamento de clientes",
-    description="Endpoints para CRUD completo de clientes com aprovação automática para campos sensíveis.",
+    description="Endpoints para CRUD completo de clientes. No POST, o endereço é criado automaticamente junto com o cliente.",
 )
 class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     """
-    ViewSet para gerenciamento de clientes com aprovação automática
-    para alterações em campos sensíveis.
+    ViewSet para gerenciamento de clientes com criação automática de endereço.
+    
+    POST: Cria cliente e endereço automaticamente. Forneça os dados do cliente
+    junto com os campos do endereço (logradouro, numero, bairro, municipio, uf, cep).
     """
 
     serializer_class = ClientSerializer
@@ -91,6 +93,86 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         instance.deleted_at = timezone.now()
         instance.is_active = False
         instance.save()
+
+    @extend_schema(
+        summary="Criar cliente com endereço",
+        description="Cria um novo cliente junto com seu endereço automaticamente. Todos os campos do cliente estão disponíveis, incluindo dados do endereço.",
+        examples=[
+            OpenApiExample(
+                "Exemplo completo",
+                value={
+                    # Dados principais do cliente
+                    "razao_social": "Empresa Exemplo LTDA",
+                    "nome_fantasia": "Empresa Exemplo",
+                    "cnpj": "12.345.678/0001-90",
+                    "inscricao_estadual": "123.456.789.012",
+                    "inscricao_municipal": "9876543210",
+                    "tipo_empresa": "LTDA",
+                    "recuperacao_judicial": False,
+                    
+                    # Contatos comerciais
+                    "telefone_comercial": "(11) 1234-5678",
+                    "email_comercial": "contato@exemplo.com",
+                    "website": "https://www.exemplo.com",
+                    
+                    # Contatos diretos
+                    "telefone_contato": "(11) 9999-8888",
+                    "email_contato": "financeiro@exemplo.com",
+                    
+                    # Dados societários
+                    "quadro_societario": [{"nome": "João Silva", "participacao": "50%"}],
+                    "cargos": {"diretor": "João Silva", "gerente": "Maria Santos"},
+                    "responsavel_financeiro": "Maria Santos",
+                    "contador_responsavel": "Carlos Oliveira",
+                    
+                    # Dados fiscais
+                    "cnaes": ["6201-5/00", "6202-3/00"],
+                    "regime_tributacao": "lucro_presumido",
+                    
+                    # Documentos
+                    "contrato_social": "Contrato registrado em 01/01/2023",
+                    "ultima_alteracao_contratual": "2023-06-15T00:00:00Z",
+                    "rg_cpf_socios": "João: CPF 123.456.789-00",
+                    "certificado_digital": "Válido até 31/12/2024",
+                    
+                    # Controles
+                    "autorizado_para_envio": True,
+                    "atividades": {"principal": "Desenvolvimento de software"},
+                    "client_status": "active",
+                    "is_active": True,
+                    
+                    # Dados do endereço (obrigatórios se fornecidos)
+                    "logradouro": "Rua das Flores",
+                    "numero": "123",
+                    "complemento": "Sala 456",
+                    "bairro": "Centro",
+                    "municipio": "São Paulo",
+                    "uf": "SP",
+                    "cep": "01234-567"
+                }
+            ),
+            OpenApiExample(
+                "Exemplo mínimo",
+                value={
+                    "razao_social": "Empresa Simples LTDA",
+                    "cnpj": "98.765.432/0001-10",
+                    "logradouro": "Av. Principal",
+                    "numero": "456",
+                    "bairro": "Vila Nova",
+                    "municipio": "Rio de Janeiro",
+                    "uf": "RJ",
+                    "cep": "20000-000"
+                }
+            )
+        ],
+        responses={
+            201: OpenApiResponse(description="Cliente e endereço criados com sucesso"),
+            400: OpenApiResponse(description="Dados inválidos"),
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        """Criar cliente com endereço automaticamente."""
+        return super().create(request, *args, **kwargs)
 
     @extend_schema(
         tags=["Clientes"],

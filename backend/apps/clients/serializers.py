@@ -114,11 +114,22 @@ class ClientAttachedFileSerializer(AttachedFileSerializer):
 
 
 class ClientSerializer(serializers.ModelSerializer):
-    """Serializer completo para Client."""
+    """Serializer completo para Client com criação automática de endereço."""
 
     id = serializers.UUIDField(source="public_id", read_only=True)
-    address_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    
+    # Campos do endereço (write-only no POST, read-only via nested address)
+    logradouro = serializers.CharField(write_only=True, max_length=255, required=False)
+    numero = serializers.CharField(write_only=True, max_length=20, required=False)
+    complemento = serializers.CharField(write_only=True, max_length=255, required=False, allow_blank=True)
+    bairro = serializers.CharField(write_only=True, max_length=100, required=False)
+    municipio = serializers.CharField(write_only=True, max_length=100, required=False)
+    uf = serializers.CharField(write_only=True, max_length=2, required=False)
+    cep = serializers.CharField(write_only=True, max_length=10, required=False)
+    
+    # Endereço completo para leitura
     address = AddressSerializer(read_only=True)
+    
     client_status = serializers.ChoiceField(
         choices=Client.ClientStatus.choices,
         required=False,
@@ -157,33 +168,65 @@ class ClientSerializer(serializers.ModelSerializer):
             "atividades",
             "client_status",
             "is_active",
-            "address_id",
+            # Campos do endereço
+            "logradouro",
+            "numero", 
+            "complemento",
+            "bairro",
+            "municipio",
+            "uf",
+            "cep",
+            # Endereço completo (read-only)
             "address",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "address", "created_at", "updated_at"]
 
-    def validate_address_id(self, value):
-        """Validar e converter address_id de UUID para int."""
-        if value is None:
-            return None
-        try:
-            address = Address.objects.get(public_id=value, deleted_at__isnull=True)
-            return address.id  # Retorna o ID interno
-        except Address.DoesNotExist:
-            raise serializers.ValidationError("Endereço não encontrado.")
+    def validate(self, attrs):
+        """Validar que os campos do endereço estão completos se fornecidos."""
+        address_fields = ['logradouro', 'numero', 'bairro', 'municipio', 'uf', 'cep']
+        address_data = {field: attrs.get(field) for field in address_fields if field in attrs}
+        
+        if address_data:
+            # Se algum campo de endereço foi fornecido, verificar os obrigatórios
+            required_fields = ['logradouro', 'numero', 'bairro', 'municipio', 'uf', 'cep']
+            missing_fields = [field for field in required_fields if not attrs.get(field)]
+            
+            if missing_fields:
+                raise serializers.ValidationError(
+                    f"Campos obrigatórios do endereço: {', '.join(missing_fields)}"
+                )
+        
+        return super().validate(attrs)
 
     def create(self, validated_data):
-        """Criar cliente convertendo address_id se fornecido."""
-        if "address_id" in validated_data:
-            validated_data["address_id"] = validated_data.pop("address_id")
+        """Criar cliente com endereço automaticamente."""
+        # Extrair dados do endereço
+        address_fields = ['logradouro', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cep']
+        address_data = {}
+        
+        for field in address_fields:
+            if field in validated_data:
+                address_data[field] = validated_data.pop(field)
+        
+        # Criar endereço se dados foram fornecidos
+        address_id = None
+        if address_data:
+            address = Address.objects.create(**address_data)
+            address_id = address.id
+        
+        # Criar cliente com referência ao endereço
+        validated_data['address_id'] = address_id
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        """Atualizar cliente convertendo address_id se fornecido."""
-        if "address_id" in validated_data:
-            validated_data["address_id"] = validated_data.pop("address_id")
+        """Atualizar cliente (endereço não é alterado via este serializer)."""
+        # Remover campos de endereço se fornecidos (não suportado no update)
+        address_fields = ['logradouro', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cep']
+        for field in address_fields:
+            validated_data.pop(field, None)
+        
         return super().update(instance, validated_data)
 
 
