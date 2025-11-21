@@ -169,12 +169,12 @@
 
 ## ✅ Checklist Final de Prontidão (DoD)
 
-- [ ] JWT + refresh rotation + blacklist; 2FA ativo para staff
-- [ ] RBAC aplicado por viewset/ação; approvals idempotentes
-- [ ] Clients e PER/DCOMPs com notas, anexos e auditoria
+- [X] JWT + refresh rotation + blacklist; 2FA ativo para staff
+- [X] RBAC aplicado por viewset/ação; approvals idempotentes
+- [X] Clients e PER/DCOMPs com notas, anexos e auditoria
 - [ ] Integração CNPJ funcionando com fallback/timeout
 - [ ] Celery/Redis operacionais; e-mails enviados
-- [ ] OpenAPI publicada; erros canônicos; testes passando
+- [X] OpenAPI publicada; erros canônicos; testes passando
 - [ ] Backoffice seguro (`/backoffice/`) com dashboards e fila de approvals
 - [ ] Storage S3 em prod, URLs assinadas e limites de upload
 - [ ] CI/CD (lint/test/build) ativo; smoke tests OK em staging
