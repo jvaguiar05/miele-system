@@ -269,3 +269,121 @@ SENSITIVE_FIELDS_CONFIG = {
         "is_active",
     ],
 }
+
+# Jazzmin Configuration - Modern Backoffice
+JAZZMIN_SETTINGS = {
+    # Site branding
+    "site_title": "Miele Admin",
+    "site_header": "Miele System",
+    "site_brand": "Miele",
+    "welcome_sign": "Bem-vindo ao Miele System",
+    "copyright": "Compasse Ltda",
+    # Search model - Busca global inteligente
+    "search_model": [
+        "identity.User",
+        "clients.Client",
+        "perdcomps.PerDcomp",
+        "approvals.ApprovalRequest",
+    ],
+    # User menu - Funcionalidades úteis para o usuário logado
+    "usermenu_links": [
+        {
+            "name": "Documentação API",
+            "url": "/api/docs/",
+            "icon": "fas fa-book",
+            "new_window": True,
+        },
+        {
+            "name": "Repositório GitHub",
+            "url": "https://github.com/jvaguiar05/miele-system",
+            "icon": "fab fa-github",
+            "new_window": True,
+        },
+    ],
+    # Header personalizado - Remove links redundantes de navegação
+    # O header agora foca em funcionalidades úteis como busca global e notificações
+    "topmenu_links": [],  # Remove todos os links de navegação do header
+    # Navbar customization for functionality
+    "show_sidebar": True,
+    "navigation_expanded": True,
+    "hide_apps": [],
+    "hide_models": [],
+    # Side menu ordering - SECURITY CONTROL CENTER AT TOP
+    "order_with_respect_to": [
+        "approvals",
+        "audit",
+        "identity",
+        "clients",
+        "perdcomps",
+        "shared",
+    ],
+    # Icons mapping - SECURITY AND CONTROL FOCUS
+    "icons": {
+        "auth": "fas fa-shield-alt",
+        "auth.user": "fas fa-users-cog",
+        "auth.Group": "fas fa-users",
+        # TOKEN AUTHENTICATION SECURITY
+        "authtoken": "fas fa-key",
+        "authtoken.tokenproxy": "fas fa-key",
+        "token_blacklist": "fas fa-ban",
+        "token_blacklist.BlacklistedToken": "fas fa-ban",
+        "token_blacklist.OutstandingToken": "fas fa-clock",
+        # SECURITY CONTROL CENTER - TOP PRIORITY
+        "approvals": "fas fa-clipboard-check",
+        "approvals.ApprovalRequest": "fas fa-clipboard-check",
+        "audit": "fas fa-fingerprint",
+        "audit.AuditLog": "fas fa-shield-alt",
+        # BUSINESS OPERATIONS
+        "identity": "fas fa-id-card",
+        "identity.User": "fas fa-users-cog",
+        "clients": "fas fa-briefcase",
+        "clients.Client": "fas fa-building",
+        "clients.Address": "fas fa-map-marker-alt",
+        "perdcomps": "fas fa-file-invoice",
+        "perdcomps.PerDcomp": "fas fa-file-invoice-dollar",
+        # SHARED UTILITIES
+        "shared": "fas fa-share-alt",
+        "shared.Annotation": "fas fa-comment-dots",
+        "shared.AttachedFile": "fas fa-paperclip",
+    },
+    # Advanced UI Customizations
+    "use_google_fonts_cdn": True,
+    "show_ui_builder": False,
+    # Language and locale
+    "language_chooser": False,
+    # Dashboard customizations
+    "show_recent_actions": True,
+    "related_modal_active": False,
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-primary",
+    "accent": "accent-primary",
+    "navbar": "navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": False,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": False,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "flatly",  # Clean Lucide-style theme
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-outline-info",
+        "warning": "btn-outline-warning",
+        "danger": "btn-outline-danger",
+        "success": "btn-outline-success",
+    },
+}
