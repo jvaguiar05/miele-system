@@ -270,21 +270,69 @@ SENSITIVE_FIELDS_CONFIG = {
     ],
 }
 
-# Jazzmin Configuration - Fix header text cutting
+# Jazzmin Configuration - Modern Backoffice
 JAZZMIN_SETTINGS = {
+    # Site branding
     "site_title": "Miele Admin",
-    "site_header": "Miele",  # Shorter text to prevent cutting
-    "site_brand": "Miele System",
+    "site_header": "Miele System",
+    "site_brand": "Miele",
     "welcome_sign": "Bem-vindo ao Miele System",
-    "copyright": "Compasse UOL",
-    
-    # UI Tweaks to handle responsive design better
+    "copyright": "© 2024 Compasse UOL - Todos os direitos reservados",
+    # Search model
+    "search_model": ["auth.User", "clients.Client", "perdcomps.PerDcomp"],
+    # User menu
+    "usermenu_links": [
+        {"name": "Suporte", "url": "admin:index", "icon": "fas fa-life-ring"},
+    ],
+    # Top menu links
+    "topmenu_links": [
+        {"name": "Início", "url": "admin:index", "permissions": ["auth.view_user"]},
+        {
+            "name": "Usuários",
+            "url": "admin:identity_user_changelist",
+            "permissions": ["identity.view_user"],
+        },
+        {
+            "name": "Clientes",
+            "url": "admin:clients_client_changelist",
+            "permissions": ["clients.view_client"],
+        },
+        {
+            "name": "PER/DCOMPs",
+            "url": "admin:perdcomps_perdcomp_changelist",
+            "permissions": ["perdcomps.view_perdcomp"],
+        },
+    ],
+    # Side menu
     "show_sidebar": True,
     "navigation_expanded": True,
-    "show_ui_builder": False,
+    "hide_apps": [],
+    "hide_models": [],
+    # Side menu ordering and icons
+    "order_with_respect_to": ["identity", "clients", "perdcomps", "shared"],
+    "icons": {
+        "auth": "fas fa-shield-alt",
+        "auth.user": "fas fa-users-cog",
+        "auth.Group": "fas fa-users",
+        "identity": "fas fa-id-card",
+        "identity.User": "fas fa-users-cog",
+        "clients": "fas fa-briefcase",
+        "clients.Client": "fas fa-building",
+        "clients.Address": "fas fa-map-marker-alt",
+        "perdcomps": "fas fa-file-invoice",
+        "perdcomps.PerDcomp": "fas fa-file-invoice-dollar",
+        "shared": "fas fa-share-alt",
+        "shared.Annotation": "fas fa-comment-dots",
+        "shared.AttachedFile": "fas fa-paperclip",
+        "audit": "fas fa-history",
+        "approvals": "fas fa-check-circle",
+    },
+    # Custom CSS/JS
+    "custom_css": None,
+    "custom_js": None,
     "use_google_fonts_cdn": True,
-    
-    # Language
+    "show_ui_builder": False,
+    # Language and locale
     "language_chooser": False,
 }
 
@@ -292,12 +340,30 @@ JAZZMIN_UI_TWEAKS = {
     "navbar_small_text": False,
     "footer_small_text": False,
     "body_small_text": False,
-    "brand_small_text": False,  # Keep brand text normal size
+    "brand_small_text": False,
     "brand_colour": "navbar-primary",
-    "accent": "accent-primary", 
+    "accent": "accent-primary",
     "navbar": "navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": False,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": False,
     "sidebar": "sidebar-dark-primary",
-    "sidebar_nav_small_text": False,  # Keep sidebar text normal size
-    "sidebar_nav_compact_style": False,  # Give more space to text
-    "theme": "default",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "flatly",  # Clean Lucide-style theme
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-outline-info",
+        "warning": "btn-outline-warning",
+        "danger": "btn-outline-danger",
+        "success": "btn-outline-success",
+    },
 }
