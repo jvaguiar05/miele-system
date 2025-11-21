@@ -279,14 +279,29 @@ JAZZMIN_SETTINGS = {
     "welcome_sign": "Bem-vindo ao Miele System",
     "copyright": "© 2024 Compasse UOL - Todos os direitos reservados",
     # Search model
-    "search_model": ["auth.User", "clients.Client", "perdcomps.PerDcomp"],
+    "search_model": [
+        "auth.User",
+        "clients.Client",
+        "perdcomps.PerDcomp",
+        "approvals.ApprovalRequest",
+    ],
     # User menu
     "usermenu_links": [
         {"name": "Suporte", "url": "admin:index", "icon": "fas fa-life-ring"},
     ],
-    # Top menu links
+    # Top menu links - SECURITY CONTROL CENTER PRIORITY
     "topmenu_links": [
         {"name": "Início", "url": "admin:index", "permissions": ["auth.view_user"]},
+        {
+            "name": "Aprovações Pendentes",
+            "url": "admin:approvals_approvalrequest_changelist",
+            "permissions": ["approvals.view_approvalrequest"],
+        },
+        {
+            "name": "Logs de Auditoria",
+            "url": "admin:audit_auditlog_changelist",
+            "permissions": ["audit.view_auditlog"],
+        },
         {
             "name": "Usuários",
             "url": "admin:identity_user_changelist",
@@ -308,12 +323,26 @@ JAZZMIN_SETTINGS = {
     "navigation_expanded": True,
     "hide_apps": [],
     "hide_models": [],
-    # Side menu ordering and icons
-    "order_with_respect_to": ["identity", "clients", "perdcomps", "shared"],
+    # Side menu ordering - SECURITY CONTROL CENTER AT TOP
+    "order_with_respect_to": [
+        "approvals",
+        "audit",
+        "identity",
+        "clients",
+        "perdcomps",
+        "shared",
+    ],
+    # Icons mapping - SECURITY AND CONTROL FOCUS
     "icons": {
         "auth": "fas fa-shield-alt",
         "auth.user": "fas fa-users-cog",
         "auth.Group": "fas fa-users",
+        # SECURITY CONTROL CENTER - TOP PRIORITY
+        "approvals": "fas fa-clipboard-check",
+        "approvals.ApprovalRequest": "fas fa-clipboard-check",
+        "audit": "fas fa-fingerprint",
+        "audit.AuditLog": "fas fa-shield-alt",
+        # BUSINESS OPERATIONS
         "identity": "fas fa-id-card",
         "identity.User": "fas fa-users-cog",
         "clients": "fas fa-briefcase",
@@ -321,11 +350,10 @@ JAZZMIN_SETTINGS = {
         "clients.Address": "fas fa-map-marker-alt",
         "perdcomps": "fas fa-file-invoice",
         "perdcomps.PerDcomp": "fas fa-file-invoice-dollar",
+        # SHARED UTILITIES
         "shared": "fas fa-share-alt",
         "shared.Annotation": "fas fa-comment-dots",
         "shared.AttachedFile": "fas fa-paperclip",
-        "audit": "fas fa-history",
-        "approvals": "fas fa-check-circle",
     },
     # Custom CSS/JS
     "custom_css": None,
