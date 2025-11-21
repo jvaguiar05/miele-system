@@ -269,3 +269,35 @@ SENSITIVE_FIELDS_CONFIG = {
         "is_active",
     ],
 }
+
+# Jazzmin Configuration - Fix header text cutting
+JAZZMIN_SETTINGS = {
+    "site_title": "Miele Admin",
+    "site_header": "Miele",  # Shorter text to prevent cutting
+    "site_brand": "Miele System",
+    "welcome_sign": "Bem-vindo ao Miele System",
+    "copyright": "Compasse UOL",
+    
+    # UI Tweaks to handle responsive design better
+    "show_sidebar": True,
+    "navigation_expanded": True,
+    "show_ui_builder": False,
+    "use_google_fonts_cdn": True,
+    
+    # Language
+    "language_chooser": False,
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,  # Keep brand text normal size
+    "brand_colour": "navbar-primary",
+    "accent": "accent-primary", 
+    "navbar": "navbar-dark",
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,  # Keep sidebar text normal size
+    "sidebar_nav_compact_style": False,  # Give more space to text
+    "theme": "default",
+}
