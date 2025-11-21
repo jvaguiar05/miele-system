@@ -49,7 +49,6 @@ INSTALLED_APPS = [
     "apps.identity",
     "apps.clients",
     "apps.perdcomps",
-    "apps.admin_backoffice",
     # Common modules
     "common.audit",
     "common.approvals",
