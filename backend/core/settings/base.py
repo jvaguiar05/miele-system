@@ -277,48 +277,33 @@ JAZZMIN_SETTINGS = {
     "site_header": "Miele System",
     "site_brand": "Miele",
     "welcome_sign": "Bem-vindo ao Miele System",
-    "copyright": "© 2024 Compasse UOL - Todos os direitos reservados",
-    # Search model
+    "copyright": "Compasse Ltda",
+    # Search model - Busca global inteligente
     "search_model": [
-        "auth.User",
+        "identity.User",
         "clients.Client",
         "perdcomps.PerDcomp",
         "approvals.ApprovalRequest",
     ],
-    # User menu
+    # User menu - Funcionalidades úteis para o usuário logado
     "usermenu_links": [
-        {"name": "Suporte", "url": "admin:index", "icon": "fas fa-life-ring"},
-    ],
-    # Top menu links - SECURITY CONTROL CENTER PRIORITY
-    "topmenu_links": [
-        {"name": "Início", "url": "admin:index", "permissions": ["auth.view_user"]},
         {
-            "name": "Aprovações Pendentes",
-            "url": "admin:approvals_approvalrequest_changelist",
-            "permissions": ["approvals.view_approvalrequest"],
+            "name": "Documentação API",
+            "url": "/api/docs/",
+            "icon": "fas fa-book",
+            "new_window": True,
         },
         {
-            "name": "Logs de Auditoria",
-            "url": "admin:audit_auditlog_changelist",
-            "permissions": ["audit.view_auditlog"],
-        },
-        {
-            "name": "Usuários",
-            "url": "admin:identity_user_changelist",
-            "permissions": ["identity.view_user"],
-        },
-        {
-            "name": "Clientes",
-            "url": "admin:clients_client_changelist",
-            "permissions": ["clients.view_client"],
-        },
-        {
-            "name": "PER/DCOMPs",
-            "url": "admin:perdcomps_perdcomp_changelist",
-            "permissions": ["perdcomps.view_perdcomp"],
+            "name": "Repositório GitHub",
+            "url": "https://github.com/jvaguiar05/miele-system",
+            "icon": "fab fa-github",
+            "new_window": True,
         },
     ],
-    # Side menu
+    # Header personalizado - Remove links redundantes de navegação
+    # O header agora foca em funcionalidades úteis como busca global e notificações
+    "topmenu_links": [],  # Remove todos os links de navegação do header
+    # Navbar customization for functionality
     "show_sidebar": True,
     "navigation_expanded": True,
     "hide_apps": [],
@@ -337,6 +322,12 @@ JAZZMIN_SETTINGS = {
         "auth": "fas fa-shield-alt",
         "auth.user": "fas fa-users-cog",
         "auth.Group": "fas fa-users",
+        # TOKEN AUTHENTICATION SECURITY
+        "authtoken": "fas fa-key",
+        "authtoken.tokenproxy": "fas fa-key",
+        "token_blacklist": "fas fa-ban",
+        "token_blacklist.BlacklistedToken": "fas fa-ban",
+        "token_blacklist.OutstandingToken": "fas fa-clock",
         # SECURITY CONTROL CENTER - TOP PRIORITY
         "approvals": "fas fa-clipboard-check",
         "approvals.ApprovalRequest": "fas fa-clipboard-check",
@@ -355,13 +346,14 @@ JAZZMIN_SETTINGS = {
         "shared.Annotation": "fas fa-comment-dots",
         "shared.AttachedFile": "fas fa-paperclip",
     },
-    # Custom CSS/JS
-    "custom_css": None,
-    "custom_js": None,
+    # Advanced UI Customizations
     "use_google_fonts_cdn": True,
     "show_ui_builder": False,
     # Language and locale
     "language_chooser": False,
+    # Dashboard customizations
+    "show_recent_actions": True,
+    "related_modal_active": False,
 }
 
 JAZZMIN_UI_TWEAKS = {
