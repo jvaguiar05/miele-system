@@ -18,15 +18,14 @@ router.register(
 # Custom path for annotations with client_id as parameter
 urlpatterns = [
     path(
-        "clients/annotations/<uuid:client_id>/",
+        "annotations/<uuid:client_id>/",
         ClientAnnotationViewSet.as_view({"post": "create", "get": "list"}),
         name="client-annotations",
     ),
     path(
-        "clients/annotations/<uuid:client_id>/<uuid:annotation_id>/",
+        "annotations/<uuid:annotation_id>/",
         ClientAnnotationViewSet.as_view(
             {
-                "get": "retrieve",
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",

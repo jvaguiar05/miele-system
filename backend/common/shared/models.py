@@ -18,7 +18,9 @@ class Annotation(models.Model):
 
     # Dados da anotação
     user_id = models.BigIntegerField(help_text="ID do usuário que criou a anotação")
-    content = models.TextField(help_text="Conteúdo da anotação")
+    content = models.JSONField(
+        help_text="Conteúdo da anotação em formato JSON", default=dict, blank=True
+    )
 
     # Controle de datas
     created_at = models.DateTimeField(auto_now_add=True)
@@ -28,6 +30,14 @@ class Annotation(models.Model):
     class Meta:
         db_table = "common_annotations"
         ordering = ["-created_at"]
+        # Unique constraint: one annotation per user per entity
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user_id", "content_type", "object_id"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_user_entity_annotation",
+            )
+        ]
         indexes = [
             models.Index(fields=["content_type", "object_id"]),
             models.Index(fields=["user_id"]),

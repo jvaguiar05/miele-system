@@ -220,9 +220,9 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
     Endpoints:
     POST /api/v1/perdcomps/annotations/{perdcomp_id}/ - Criar anotação para PER/DCOMP
     GET /api/v1/perdcomps/annotations/{perdcomp_id}/ - Listar anotações do PER/DCOMP
-    GET /api/v1/perdcomps/annotations/{perdcomp_id}/{annotation_id}/ - Obter anotação específica
-    PUT/PATCH /api/v1/perdcomps/annotations/{perdcomp_id}/{annotation_id}/ - Atualizar anotação
-    DELETE /api/v1/perdcomps/annotations/{perdcomp_id}/{annotation_id}/ - Excluir anotação
+    PUT /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar anotação completa
+    PATCH /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar apenas campo 'text'
+    DELETE /api/v1/perdcomps/annotations/{annotation_id}/ - Excluir anotação
     """
 
     serializer_class = PerDcompAnnotationSerializer
@@ -230,12 +230,13 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
     lookup_url_kwarg = "annotation_id"  # Use annotation_id from URL
     permission_classes = [IsOwnerOrAdminForAnnotations]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ["user_id"]
     search_fields = ["content"]
     ordering_fields = ["created_at", "updated_at"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Filtrar anotações do PER/DCOMP especificado na URL."""
+        """Filtrar anotações baseado no contexto da URL."""
         from django.contrib.contenttypes.models import ContentType
 
         perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
@@ -243,18 +244,15 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
             deleted_at__isnull=True, content_type=perdcomp_ct
         )
 
-        # Filtrar pelo perdcomp_id da URL se fornecido
+        # Se há perdcomp_id na URL (para list/create), filtrar por PER/DCOMP
         perdcomp_id = self.kwargs.get("perdcomp_id")
         if perdcomp_id:
-            # Verificar se o PER/DCOMP existe
             try:
                 perdcomp = PerDcomp.objects.get(
                     public_id=perdcomp_id, deleted_at__isnull=True
                 )
-                # Filtrar anotações deste PER/DCOMP específico
                 queryset = queryset.filter(object_id=perdcomp.id)
             except PerDcomp.DoesNotExist:
-                # Se PER/DCOMP não existe, retornar queryset vazio
                 queryset = queryset.none()
 
         # Se não for admin, filtrar apenas anotações do usuário
@@ -280,27 +278,39 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         return obj
 
     @extend_schema(
-        summary="Criar anotação para PER/DCOMP",
+        summary="Criar ou atualizar anotação para PER/DCOMP",
         description="""
-        Cria uma nova anotação para um PER/DCOMP específico.
+        Cria uma nova anotação para um PER/DCOMP específico ou atualiza a anotação existente.
+        
+        **Importante:** Cada usuário pode ter apenas UMA anotação por PER/DCOMP.
+        Se uma anotação já existir para este usuário e PER/DCOMP, ela será atualizada.
         
         O perdcomp_id deve ser fornecido na URL como parâmetro.
+        O content deve ser um objeto JSON com a estrutura desejada.
         """,
         request=PerDcompAnnotationSerializer,
         responses={
             201: OpenApiResponse(description="Anotação criada com sucesso"),
+            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
             400: OpenApiResponse(description="Dados inválidos"),
             404: OpenApiResponse(description="PER/DCOMP não encontrado"),
         },
         examples=[
             OpenApiExample(
                 "Exemplo de requisição",
-                value={"content": "Esta é uma anotação importante sobre o PER/DCOMP."},
+                value={
+                    "content": {
+                        "text": "Esta é uma anotação importante sobre o PER/DCOMP.",
+                        "priority": "high",
+                        "tags": ["importante", "urgente"],
+                        "metadata": {"created_by": "system", "category": "observacao"},
+                    }
+                },
             )
         ],
     )
     def create(self, request, *args, **kwargs):
-        """Criar anotação com perdcomp_id obtido da URL."""
+        """Criar ou atualizar anotação com perdcomp_id obtido da URL."""
         # Obter perdcomp_id da URL
         perdcomp_id = kwargs.get("perdcomp_id")
 
@@ -320,33 +330,72 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
                 {"error": "PER/DCOMP não encontrado."}, status=status.HTTP_404_NOT_FOUND
             )
 
-        # Serializar dados do request
-        serializer = self.get_serializer(data=request.data)
+        # Adicionar entity_type e entity_id aos dados
+        data = request.data.copy()
+        data["entity_type"] = "perdcomp"
+        data["entity_id"] = str(perdcomp_id)
+
+        # Usar o serializer que tem a lógica de upsert
+        serializer = PerDcompAnnotationSerializer(
+            data=data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
 
-        # Adicionar entity_type e entity_id manualmente
-        validated_data = serializer.validated_data
-        validated_data["entity_type"] = "perdcomp"
-        validated_data["entity_id"] = str(perdcomp_id)  # Usar o UUID do PER/DCOMP
+        # Verificar se já existe anotação para este usuário e PER/DCOMP
+        user_id = request.user.id
+        existing_annotation = Annotation.objects.filter(
+            user_id=user_id,
+            content_type__app_label="perdcomps",
+            content_type__model="perdcomp",
+            object_id=perdcomp.id,
+            deleted_at__isnull=True,
+        ).first()
 
-        # Chamar o método validate do AnnotationSerializer pai
-        annotation_data = AnnotationSerializer().validate(validated_data)
+        is_update = existing_annotation is not None
+        annotation = (
+            serializer.save()
+        )  # Aqui o serializer faz create ou update automaticamente
 
-        # Criar a anotação
-        annotation = AnnotationSerializer().create(annotation_data)
-
-        # Retornar resposta
+        # Retornar resposta com status apropriado
         response_serializer = self.get_serializer(annotation)
         headers = self.get_success_headers(response_serializer.data)
-        return Response(
-            response_serializer.data, status=status.HTTP_201_CREATED, headers=headers
-        )
+
+        status_code = status.HTTP_200_OK if is_update else status.HTTP_201_CREATED
+
+        return Response(response_serializer.data, status=status_code, headers=headers)
 
     @extend_schema(
         summary="Listar anotações do PER/DCOMP",
         description="Lista todas as anotações do PER/DCOMP especificado.",
         responses={
-            200: OpenApiResponse(description="Lista de anotações"),
+            200: OpenApiResponse(
+                description="Lista de anotações",
+                examples=[
+                    OpenApiExample(
+                        "Exemplo de resposta",
+                        value={
+                            "count": 1,
+                            "next": None,
+                            "previous": None,
+                            "results": [
+                                {
+                                    "id": "123e4567-e89b-12d3-a456-426614174000",
+                                    "entity_name": "PER/DCOMP 2023001",
+                                    "user_name": "usuario",
+                                    "content": {
+                                        "text": "Anotação sobre o PER/DCOMP",
+                                        "priority": "medium",
+                                        "tags": ["revisão"],
+                                        "metadata": {"category": "processamento"},
+                                    },
+                                    "created_at": "2023-01-01T12:00:00Z",
+                                    "updated_at": "2023-01-01T12:00:00Z",
+                                }
+                            ],
+                        },
+                    )
+                ],
+            ),
             404: OpenApiResponse(description="PER/DCOMP não encontrado"),
         },
     )
@@ -363,6 +412,180 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
             )
 
         return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Obter anotação específica do PER/DCOMP",
+        description="Obtém uma anotação específica de um PER/DCOMP. O content retornado é um objeto JSON estruturado.",
+        responses={
+            200: OpenApiResponse(
+                description="Anotação encontrada",
+                examples=[
+                    OpenApiExample(
+                        "Exemplo de resposta",
+                        value={
+                            "id": "123e4567-e89b-12d3-a456-426614174000",
+                            "entity_name": "PER/DCOMP 2023001",
+                            "user_name": "usuario",
+                            "content": {
+                                "text": "Anotação sobre o PER/DCOMP",
+                                "priority": "medium",
+                                "tags": ["revisão"],
+                                "metadata": {"category": "processamento"},
+                            },
+                            "created_at": "2023-01-01T12:00:00Z",
+                            "updated_at": "2023-01-01T12:00:00Z",
+                        },
+                    )
+                ],
+            ),
+            404: OpenApiResponse(description="Anotação não encontrada"),
+        },
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """Obter anotação específica."""
+        return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Atualizar completamente anotação do PER/DCOMP",
+        description="""Atualiza completamente uma anotação de PER/DCOMP. O content deve ser um objeto JSON completo.
+        
+        **Importante:** Esta operação substitui todo o conteúdo da anotação. Use PATCH para atualizações parciais.
+        """,
+        request=PerDcompAnnotationSerializer,
+        responses={
+            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
+            400: OpenApiResponse(description="Dados inválidos"),
+            404: OpenApiResponse(description="Anotação não encontrada"),
+        },
+        examples=[
+            OpenApiExample(
+                "Exemplo de requisição",
+                value={
+                    "content": {
+                        "text": "Texto da anotação atualizada",
+                        "priority": "high",
+                        "tags": ["urgente", "atualizada"],
+                        "metadata": {
+                            "updated_by": "user",
+                            "category": "observacao",
+                            "version": 2,
+                        },
+                    }
+                },
+            )
+        ],
+    )
+    def update(self, request, *args, **kwargs):
+        """Atualização completa da anotação."""
+        # Validar que content está presente e é um objeto válido
+        if "content" not in request.data:
+            return Response(
+                {"error": "Campo 'content' é obrigatório."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        content = request.data.get("content")
+        if not isinstance(content, dict):
+            return Response(
+                {"error": "Campo 'content' deve ser um objeto JSON."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return super().update(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Atualizar parcialmente anotação do PER/DCOMP",
+        description="""Atualiza apenas o campo 'text' dentro do conteúdo da anotação do PER/DCOMP.
+        
+        **Importante:** Este endpoint permite apenas a atualização do campo 'text' dentro do objeto 'content'.
+        Outros campos do conteúdo não serão modificados. Para atualizações completas, use PUT.
+        """,
+        request=PerDcompAnnotationSerializer,
+        responses={
+            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
+            400: OpenApiResponse(description="Dados inválidos"),
+            404: OpenApiResponse(description="Anotação não encontrada"),
+        },
+        examples=[
+            OpenApiExample(
+                "Atualização parcial do texto",
+                value={"content": {"text": "Texto atualizado da anotação"}},
+            )
+        ],
+    )
+    def partial_update(self, request, *args, **kwargs):
+        """Atualização parcial da anotação - apenas campo 'text' do content."""
+        perdcomp_id = kwargs.get("perdcomp_id")
+
+        # Verificar se o PER/DCOMP existe
+        try:
+            PerDcomp.objects.get(public_id=perdcomp_id, deleted_at__isnull=True)
+        except PerDcomp.DoesNotExist:
+            return Response(
+                {"error": "PER/DCOMP não encontrado."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Validar que apenas o campo 'text' do content está sendo atualizado
+        if "content" in request.data:
+            content = request.data.get("content")
+            if not isinstance(content, dict):
+                return Response(
+                    {"error": "Campo 'content' deve ser um objeto JSON."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Verificar se apenas 'text' está sendo enviado
+            allowed_fields = {"text"}
+            provided_fields = set(content.keys())
+            invalid_fields = provided_fields - allowed_fields
+
+            if invalid_fields:
+                return Response(
+                    {
+                        "error": f"PATCH permite apenas o campo 'text' dentro de 'content'. Campos inválidos: {list(invalid_fields)}"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if "text" not in content:
+                return Response(
+                    {"error": "Campo 'text' é obrigatório em PATCH."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            return Response(
+                {"error": "Campo 'content' com 'text' é obrigatório em PATCH."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Obter a anotação existente e fazer merge apenas do campo 'text'
+        annotation = self.get_object()
+        current_content = annotation.content or {}
+
+        # Atualizar apenas o campo 'text', mantendo outros campos
+        updated_content = current_content.copy()
+        updated_content["text"] = content["text"]
+
+        # Preparar dados para serializer com content completo
+        data = {"content": updated_content}
+
+        serializer = self.get_serializer(annotation, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Excluir anotação do PER/DCOMP",
+        description="Exclui uma anotação específica de um PER/DCOMP (soft delete).",
+        responses={
+            204: OpenApiResponse(description="Anotação excluída com sucesso"),
+            404: OpenApiResponse(description="Anotação não encontrada"),
+        },
+    )
+    def destroy(self, request, *args, **kwargs):
+        """Excluir anotação."""
+        return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         """Soft delete com data de exclusão."""

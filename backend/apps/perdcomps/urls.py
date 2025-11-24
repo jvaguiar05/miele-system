@@ -21,10 +21,9 @@ urlpatterns = [
         name="perdcomp-annotations",
     ),
     path(
-        "annotations/<uuid:perdcomp_id>/<uuid:annotation_id>/",
+        "annotations/<uuid:annotation_id>/",
         PerDcompAnnotationViewSet.as_view(
             {
-                "get": "retrieve",
                 "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
