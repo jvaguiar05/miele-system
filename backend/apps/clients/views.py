@@ -42,7 +42,7 @@ class PingView(APIView):
 class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     """
     ViewSet para gerenciamento de clientes com criação automática de endereço.
-    
+
     POST: Cria cliente e endereço automaticamente. Forneça os dados do cliente
     junto com os campos do endereço (logradouro, numero, bairro, municipio, uf, cep).
     """
@@ -109,38 +109,33 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "inscricao_municipal": "9876543210",
                     "tipo_empresa": "LTDA",
                     "recuperacao_judicial": False,
-                    
                     # Contatos comerciais
                     "telefone_comercial": "(11) 1234-5678",
                     "email_comercial": "contato@exemplo.com",
                     "website": "https://www.exemplo.com",
-                    
                     # Contatos diretos
                     "telefone_contato": "(11) 9999-8888",
                     "email_contato": "financeiro@exemplo.com",
-                    
                     # Dados societários
-                    "quadro_societario": [{"nome": "João Silva", "participacao": "50%"}],
+                    "quadro_societario": [
+                        {"nome": "João Silva", "participacao": "50%"}
+                    ],
                     "cargos": {"diretor": "João Silva", "gerente": "Maria Santos"},
                     "responsavel_financeiro": "Maria Santos",
                     "contador_responsavel": "Carlos Oliveira",
-                    
                     # Dados fiscais
                     "cnaes": ["6201-5/00", "6202-3/00"],
                     "regime_tributacao": "lucro_presumido",
-                    
                     # Documentos
                     "contrato_social": "Contrato registrado em 01/01/2023",
                     "ultima_alteracao_contratual": "2023-06-15T00:00:00Z",
                     "rg_cpf_socios": "João: CPF 123.456.789-00",
                     "certificado_digital": "Válido até 31/12/2024",
-                    
                     # Controles
                     "autorizado_para_envio": True,
                     "atividades": {"principal": "Desenvolvimento de software"},
                     "client_status": "active",
                     "is_active": True,
-                    
                     # Dados do endereço (obrigatórios se fornecidos)
                     "logradouro": "Rua das Flores",
                     "numero": "123",
@@ -148,8 +143,8 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "bairro": "Centro",
                     "municipio": "São Paulo",
                     "uf": "SP",
-                    "cep": "01234-567"
-                }
+                    "cep": "01234-567",
+                },
             ),
             OpenApiExample(
                 "Exemplo mínimo",
@@ -161,14 +156,14 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "bairro": "Vila Nova",
                     "municipio": "Rio de Janeiro",
                     "uf": "RJ",
-                    "cep": "20000-000"
-                }
-            )
+                    "cep": "20000-000",
+                },
+            ),
         ],
         responses={
             201: OpenApiResponse(description="Cliente e endereço criados com sucesso"),
             400: OpenApiResponse(description="Dados inválidos"),
-        }
+        },
     )
     def create(self, request, *args, **kwargs):
         """Criar cliente com endereço automaticamente."""
@@ -304,10 +299,18 @@ class AddressViewSet(viewsets.ModelViewSet):
 class ClientAnnotationViewSet(viewsets.ModelViewSet):
     """
     ViewSet para gerenciamento de anotações de clientes.
+
+    Endpoints:
+    POST /api/v1/clients/annotations/{client_id}/ - Criar anotação para cliente
+    GET /api/v1/clients/annotations/{client_id}/ - Listar anotações do cliente
+    GET /api/v1/clients/annotations/{client_id}/{annotation_id}/ - Obter anotação específica
+    PUT/PATCH /api/v1/clients/annotations/{client_id}/{annotation_id}/ - Atualizar anotação
+    DELETE /api/v1/clients/annotations/{client_id}/{annotation_id}/ - Excluir anotação
     """
 
     serializer_class = ClientAnnotationSerializer
     lookup_field = "public_id"
+    lookup_url_kwarg = "annotation_id"  # Use annotation_id from URL
     permission_classes = [IsOwnerOrAdminForAnnotations]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["user_id"]
@@ -316,7 +319,7 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Filtrar apenas anotações não excluídas do usuário (ou todas se admin)."""
+        """Filtrar anotações do cliente especificado na URL."""
         from django.contrib.contenttypes.models import ContentType
         from common.permissions import IsAdminUser
 
@@ -324,6 +327,20 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         queryset = Annotation.objects.filter(
             deleted_at__isnull=True, content_type=client_ct
         )
+
+        # Filtrar pelo client_id da URL se fornecido
+        client_id = self.kwargs.get("client_id")
+        if client_id:
+            # Verificar se o cliente existe
+            try:
+                client = Client.objects.get(
+                    public_id=client_id, deleted_at__isnull=True
+                )
+                # Filtrar anotações deste cliente específico
+                queryset = queryset.filter(object_id=client.id)
+            except Client.DoesNotExist:
+                # Se cliente não existe, retornar queryset vazio
+                queryset = queryset.none()
 
         # Se não for admin, filtrar apenas anotações do usuário
         if not IsAdminUser().has_permission(self.request, self):
@@ -346,6 +363,89 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
 
         self.check_object_permissions(self.request, obj)
         return obj
+
+    @extend_schema(
+        summary="Criar anotação para cliente",
+        description="""
+        Cria uma nova anotação para um cliente específico.
+        
+        O client_id deve ser fornecido na URL como parâmetro.
+        """,
+        request=ClientAnnotationSerializer,
+        responses={
+            201: OpenApiResponse(description="Anotação criada com sucesso"),
+            400: OpenApiResponse(description="Dados inválidos"),
+            404: OpenApiResponse(description="Cliente não encontrado"),
+        },
+        examples=[
+            OpenApiExample(
+                "Exemplo de requisição",
+                value={"content": "Esta é uma anotação importante sobre o cliente."},
+            )
+        ],
+    )
+    def create(self, request, *args, **kwargs):
+        """Criar anotação com client_id obtido da URL."""
+        # Obter client_id da URL
+        client_id = kwargs.get("client_id")
+
+        if not client_id:
+            return Response(
+                {"error": "client_id é obrigatório na URL."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Verificar se o cliente existe
+        try:
+            client = Client.objects.get(public_id=client_id, deleted_at__isnull=True)
+        except Client.DoesNotExist:
+            return Response(
+                {"error": "Cliente não encontrado."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Serializar dados do request
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Adicionar entity_type e entity_id manualmente
+        validated_data = serializer.validated_data
+        validated_data["entity_type"] = "client"
+        validated_data["entity_id"] = str(client_id)  # Usar o UUID do cliente
+
+        # Chamar o método validate do AnnotationSerializer pai
+        annotation_data = AnnotationSerializer().validate(validated_data)
+
+        # Criar a anotação
+        annotation = AnnotationSerializer().create(annotation_data)
+
+        # Retornar resposta
+        response_serializer = self.get_serializer(annotation)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(
+            response_serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )
+
+    @extend_schema(
+        summary="Listar anotações do cliente",
+        description="Lista todas as anotações do cliente especificado.",
+        responses={
+            200: OpenApiResponse(description="Lista de anotações"),
+            404: OpenApiResponse(description="Cliente não encontrado"),
+        },
+    )
+    def list(self, request, *args, **kwargs):
+        """Listar anotações do cliente especificado na URL."""
+        client_id = kwargs.get("client_id")
+
+        # Verificar se o cliente existe
+        try:
+            Client.objects.get(public_id=client_id, deleted_at__isnull=True)
+        except Client.DoesNotExist:
+            return Response(
+                {"error": "Cliente não encontrado."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         """Automaticamente definir o usuário como o usuário logado."""

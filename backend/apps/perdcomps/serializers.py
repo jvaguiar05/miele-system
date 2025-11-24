@@ -14,17 +14,15 @@ from common.shared.serializers import (
 class PerDcompAnnotationSerializer(AnnotationSerializer):
     """Serializer para anotações de PER/DCOMPs."""
 
-    # Substituir entity_type e entity_id por perdcomp_id mais simples
+    # Substituir entity_type e entity_id por perdcomp_id da URL
     entity_type = None  # Não expor este campo
     entity_id = None  # Não expor este campo
-    perdcomp_id = serializers.UUIDField(
-        write_only=True, help_text="UUID do PER/DCOMP para associar a anotação"
-    )
+    # perdcomp_id será obtido da URL, não do body
 
     class Meta(AnnotationSerializer.Meta):
         fields = [
             "id",
-            "perdcomp_id",  # Substituir entity_type e entity_id
+            # perdcomp_id removido - vem da URL
             "entity_name",
             "user_name",
             "content",
@@ -40,10 +38,8 @@ class PerDcompAnnotationSerializer(AnnotationSerializer):
         ]
 
     def validate(self, attrs):
-        # Converter perdcomp_id para entity_type e entity_id
-        if "perdcomp_id" in attrs:
-            attrs["entity_type"] = "perdcomp"
-            attrs["entity_id"] = attrs.pop("perdcomp_id")
+        # perdcomp_id será injetado no view a partir da URL
+        # Não precisamos fazer nada aqui, será tratado no view
         return super().validate(attrs)
 
 

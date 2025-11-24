@@ -36,17 +36,15 @@ class AddressSerializer(serializers.ModelSerializer):
 class ClientAnnotationSerializer(AnnotationSerializer):
     """Serializer para anotações de clientes."""
 
-    # Substituir entity_type e entity_id por client_id mais simples
+    # Substituir entity_type e entity_id por client_id do header
     entity_type = None  # Não expor este campo
     entity_id = None  # Não expor este campo
-    client_id = serializers.UUIDField(
-        write_only=True, help_text="UUID do cliente para associar a anotação"
-    )
+    # client_id será obtido do header, não do body
 
     class Meta(AnnotationSerializer.Meta):
         fields = [
             "id",
-            "client_id",  # Substituir entity_type e entity_id
+            # client_id removido - vem do header
             "entity_name",
             "user_name",
             "content",
@@ -62,10 +60,8 @@ class ClientAnnotationSerializer(AnnotationSerializer):
         ]
 
     def validate(self, attrs):
-        # Converter client_id para entity_type e entity_id
-        if "client_id" in attrs:
-            attrs["entity_type"] = "client"
-            attrs["entity_id"] = attrs.pop("client_id")
+        # client_id será injetado no view a partir do header
+        # Não precisamos fazer nada aqui, será tratado no view
         return super().validate(attrs)
 
 
@@ -117,19 +113,21 @@ class ClientSerializer(serializers.ModelSerializer):
     """Serializer completo para Client com criação automática de endereço."""
 
     id = serializers.UUIDField(source="public_id", read_only=True)
-    
+
     # Campos do endereço (write-only no POST, read-only via nested address)
     logradouro = serializers.CharField(write_only=True, max_length=255, required=False)
     numero = serializers.CharField(write_only=True, max_length=20, required=False)
-    complemento = serializers.CharField(write_only=True, max_length=255, required=False, allow_blank=True)
+    complemento = serializers.CharField(
+        write_only=True, max_length=255, required=False, allow_blank=True
+    )
     bairro = serializers.CharField(write_only=True, max_length=100, required=False)
     municipio = serializers.CharField(write_only=True, max_length=100, required=False)
     uf = serializers.CharField(write_only=True, max_length=2, required=False)
     cep = serializers.CharField(write_only=True, max_length=10, required=False)
-    
+
     # Endereço completo para leitura
     address = AddressSerializer(read_only=True)
-    
+
     client_status = serializers.ChoiceField(
         choices=Client.ClientStatus.choices,
         required=False,
@@ -170,7 +168,7 @@ class ClientSerializer(serializers.ModelSerializer):
             "is_active",
             # Campos do endereço
             "logradouro",
-            "numero", 
+            "numero",
             "complemento",
             "bairro",
             "municipio",
@@ -185,48 +183,75 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """Validar que os campos do endereço estão completos se fornecidos."""
-        address_fields = ['logradouro', 'numero', 'bairro', 'municipio', 'uf', 'cep']
-        address_data = {field: attrs.get(field) for field in address_fields if field in attrs}
-        
+        address_fields = ["logradouro", "numero", "bairro", "municipio", "uf", "cep"]
+        address_data = {
+            field: attrs.get(field) for field in address_fields if field in attrs
+        }
+
         if address_data:
             # Se algum campo de endereço foi fornecido, verificar os obrigatórios
-            required_fields = ['logradouro', 'numero', 'bairro', 'municipio', 'uf', 'cep']
-            missing_fields = [field for field in required_fields if not attrs.get(field)]
-            
+            required_fields = [
+                "logradouro",
+                "numero",
+                "bairro",
+                "municipio",
+                "uf",
+                "cep",
+            ]
+            missing_fields = [
+                field for field in required_fields if not attrs.get(field)
+            ]
+
             if missing_fields:
                 raise serializers.ValidationError(
                     f"Campos obrigatórios do endereço: {', '.join(missing_fields)}"
                 )
-        
+
         return super().validate(attrs)
 
     def create(self, validated_data):
         """Criar cliente com endereço automaticamente."""
         # Extrair dados do endereço
-        address_fields = ['logradouro', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cep']
+        address_fields = [
+            "logradouro",
+            "numero",
+            "complemento",
+            "bairro",
+            "municipio",
+            "uf",
+            "cep",
+        ]
         address_data = {}
-        
+
         for field in address_fields:
             if field in validated_data:
                 address_data[field] = validated_data.pop(field)
-        
+
         # Criar endereço se dados foram fornecidos
         address_id = None
         if address_data:
             address = Address.objects.create(**address_data)
             address_id = address.id
-        
+
         # Criar cliente com referência ao endereço
-        validated_data['address_id'] = address_id
+        validated_data["address_id"] = address_id
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         """Atualizar cliente (endereço não é alterado via este serializer)."""
         # Remover campos de endereço se fornecidos (não suportado no update)
-        address_fields = ['logradouro', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cep']
+        address_fields = [
+            "logradouro",
+            "numero",
+            "complemento",
+            "bairro",
+            "municipio",
+            "uf",
+            "cep",
+        ]
         for field in address_fields:
             validated_data.pop(field, None)
-        
+
         return super().update(instance, validated_data)
 
 

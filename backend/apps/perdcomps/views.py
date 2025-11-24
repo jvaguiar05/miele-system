@@ -153,124 +153,6 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
             status=status.HTTP_202_ACCEPTED,
         )
 
-    @extend_schema(
-        tags=["PER/DCOMPs"],
-        summary="Listar arquivos anexados ao PER/DCOMP",
-        description="Lista todos os arquivos anexados a um PER/DCOMP específico.",
-        operation_id="list_perdcomp_attached_files",
-        responses={
-            200: PerDcompAttachedFileSerializer(many=True),
-            404: OpenApiResponse(description="PER/DCOMP não encontrado"),
-        },
-    )
-    @action(
-        detail=True,
-        methods=["get"],
-        url_path="attached-files",
-    )
-    def list_attached_files(self, request, pk=None):
-        """Listar arquivos anexados ao PER/DCOMP."""
-        instance = self.get_object()
-        from django.contrib.contenttypes.models import ContentType
-
-        perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
-        files = AttachedFile.objects.filter(
-            content_type=perdcomp_ct, object_id=instance.id, deleted_at__isnull=True
-        )
-        serializer = PerDcompAttachedFileSerializer(files, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=["PER/DCOMPs"],
-        summary="Anexar arquivo ao PER/DCOMP",
-        description="Anexa um novo arquivo ao PER/DCOMP.",
-        request=PerDcompAttachedFileSerializer,
-        responses={
-            201: PerDcompAttachedFileSerializer,
-            400: OpenApiResponse(description="Dados inválidos"),
-            404: OpenApiResponse(description="PER/DCOMP não encontrado"),
-        },
-    )
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="attach-file",
-        serializer_class=PerDcompAttachedFileSerializer,
-    )
-    def attach_file(self, request, pk=None):
-        """Anexar arquivo ao PER/DCOMP."""
-        instance = self.get_object()
-        data = request.data.copy()
-        data["entity_id"] = instance.public_id
-        data["entity_type"] = "perdcomp"
-
-        serializer = PerDcompAttachedFileSerializer(
-            data=data, context={"request": request}
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @extend_schema(
-        tags=["PER/DCOMPs"],
-        summary="Listar anotações do PER/DCOMP",
-        description="Lista todas as anotações de um PER/DCOMP específico.",
-        operation_id="list_perdcomp_annotations",
-        responses={
-            200: PerDcompAnnotationSerializer(many=True),
-            404: OpenApiResponse(description="PER/DCOMP não encontrado"),
-        },
-    )
-    @action(
-        detail=True,
-        methods=["get"],
-        url_path="annotations",
-    )
-    def list_annotations(self, request, pk=None):
-        """Listar anotações do PER/DCOMP."""
-        instance = self.get_object()
-        from django.contrib.contenttypes.models import ContentType
-
-        perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
-        annotations = Annotation.objects.filter(
-            content_type=perdcomp_ct, object_id=instance.id, deleted_at__isnull=True
-        ).order_by("-created_at")
-        serializer = PerDcompAnnotationSerializer(annotations, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(
-        tags=["PER/DCOMPs"],
-        summary="Adicionar anotação ao PER/DCOMP",
-        description="Adiciona uma nova anotação ao PER/DCOMP.",
-        request=PerDcompAnnotationSerializer,
-        responses={
-            201: PerDcompAnnotationSerializer,
-            400: OpenApiResponse(description="Dados inválidos"),
-            404: OpenApiResponse(description="PER/DCOMP não encontrado"),
-        },
-    )
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="add-annotation",
-        serializer_class=PerDcompAnnotationSerializer,
-    )
-    def add_annotation(self, request, pk=None):
-        """Adicionar anotação ao PER/DCOMP."""
-        instance = self.get_object()
-        data = request.data.copy()
-        data["entity_id"] = instance.public_id
-        data["entity_type"] = "perdcomp"
-
-        serializer = PerDcompAnnotationSerializer(
-            data=data, context={"request": request}
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
 
 @extend_schema(
     tags=["PER/DCOMPs - Arquivos"],
@@ -333,10 +215,19 @@ class PerDcompAttachedFileViewSet(viewsets.ModelViewSet):
     description="Endpoints para gerenciar anotações dos PER/DCOMPs.",
 )
 class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
-    """ViewSet para gerenciamento de anotações dos PER/DCOMPs."""
+    """ViewSet para gerenciamento de anotações dos PER/DCOMPs.
+
+    Endpoints:
+    POST /api/v1/perdcomps/annotations/{perdcomp_id}/ - Criar anotação para PER/DCOMP
+    GET /api/v1/perdcomps/annotations/{perdcomp_id}/ - Listar anotações do PER/DCOMP
+    GET /api/v1/perdcomps/annotations/{perdcomp_id}/{annotation_id}/ - Obter anotação específica
+    PUT/PATCH /api/v1/perdcomps/annotations/{perdcomp_id}/{annotation_id}/ - Atualizar anotação
+    DELETE /api/v1/perdcomps/annotations/{perdcomp_id}/{annotation_id}/ - Excluir anotação
+    """
 
     serializer_class = PerDcompAnnotationSerializer
     lookup_field = "public_id"
+    lookup_url_kwarg = "annotation_id"  # Use annotation_id from URL
     permission_classes = [IsOwnerOrAdminForAnnotations]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields = ["content"]
@@ -344,13 +235,27 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Filtrar por anotações não deletadas do usuário (ou todas se admin)."""
+        """Filtrar anotações do PER/DCOMP especificado na URL."""
         from django.contrib.contenttypes.models import ContentType
 
         perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
         queryset = Annotation.objects.filter(
             deleted_at__isnull=True, content_type=perdcomp_ct
         )
+
+        # Filtrar pelo perdcomp_id da URL se fornecido
+        perdcomp_id = self.kwargs.get("perdcomp_id")
+        if perdcomp_id:
+            # Verificar se o PER/DCOMP existe
+            try:
+                perdcomp = PerDcomp.objects.get(
+                    public_id=perdcomp_id, deleted_at__isnull=True
+                )
+                # Filtrar anotações deste PER/DCOMP específico
+                queryset = queryset.filter(object_id=perdcomp.id)
+            except PerDcomp.DoesNotExist:
+                # Se PER/DCOMP não existe, retornar queryset vazio
+                queryset = queryset.none()
 
         # Se não for admin, filtrar apenas anotações do usuário
         if not IsAdminUser().has_permission(self.request, self):
@@ -373,6 +278,91 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
 
         self.check_object_permissions(self.request, obj)
         return obj
+
+    @extend_schema(
+        summary="Criar anotação para PER/DCOMP",
+        description="""
+        Cria uma nova anotação para um PER/DCOMP específico.
+        
+        O perdcomp_id deve ser fornecido na URL como parâmetro.
+        """,
+        request=PerDcompAnnotationSerializer,
+        responses={
+            201: OpenApiResponse(description="Anotação criada com sucesso"),
+            400: OpenApiResponse(description="Dados inválidos"),
+            404: OpenApiResponse(description="PER/DCOMP não encontrado"),
+        },
+        examples=[
+            OpenApiExample(
+                "Exemplo de requisição",
+                value={"content": "Esta é uma anotação importante sobre o PER/DCOMP."},
+            )
+        ],
+    )
+    def create(self, request, *args, **kwargs):
+        """Criar anotação com perdcomp_id obtido da URL."""
+        # Obter perdcomp_id da URL
+        perdcomp_id = kwargs.get("perdcomp_id")
+
+        if not perdcomp_id:
+            return Response(
+                {"error": "perdcomp_id é obrigatório na URL."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Verificar se o PER/DCOMP existe
+        try:
+            perdcomp = PerDcomp.objects.get(
+                public_id=perdcomp_id, deleted_at__isnull=True
+            )
+        except PerDcomp.DoesNotExist:
+            return Response(
+                {"error": "PER/DCOMP não encontrado."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Serializar dados do request
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Adicionar entity_type e entity_id manualmente
+        validated_data = serializer.validated_data
+        validated_data["entity_type"] = "perdcomp"
+        validated_data["entity_id"] = str(perdcomp_id)  # Usar o UUID do PER/DCOMP
+
+        # Chamar o método validate do AnnotationSerializer pai
+        annotation_data = AnnotationSerializer().validate(validated_data)
+
+        # Criar a anotação
+        annotation = AnnotationSerializer().create(annotation_data)
+
+        # Retornar resposta
+        response_serializer = self.get_serializer(annotation)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(
+            response_serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )
+
+    @extend_schema(
+        summary="Listar anotações do PER/DCOMP",
+        description="Lista todas as anotações do PER/DCOMP especificado.",
+        responses={
+            200: OpenApiResponse(description="Lista de anotações"),
+            404: OpenApiResponse(description="PER/DCOMP não encontrado"),
+        },
+    )
+    def list(self, request, *args, **kwargs):
+        """Listar anotações do PER/DCOMP especificado na URL."""
+        perdcomp_id = kwargs.get("perdcomp_id")
+
+        # Verificar se o PER/DCOMP existe
+        try:
+            PerDcomp.objects.get(public_id=perdcomp_id, deleted_at__isnull=True)
+        except PerDcomp.DoesNotExist:
+            return Response(
+                {"error": "PER/DCOMP não encontrado."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        return super().list(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         """Soft delete com data de exclusão."""
