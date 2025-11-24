@@ -104,7 +104,8 @@ class TOTPEnrollSerializer(serializers.Serializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["username", "first_name", "last_name"]
+        fields = ["username", "first_name", "last_name", "email", "date_joined"]
+        read_only_fields = ["username", "email", "date_joined"]
 
 
 class ChangePasswordSerializer(serializers.Serializer):

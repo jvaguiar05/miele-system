@@ -404,7 +404,8 @@ class UserProfileView(APIView):
         **Campos retornados:**
         - Username
         - Nome completo (first_name, last_name)
-        - Email (se permitido)
+        - Email
+        - Data de registro (date_joined)
         - Dados públicos do perfil
         """,
         responses={
@@ -418,6 +419,7 @@ class UserProfileView(APIView):
                             "first_name": "João",
                             "last_name": "Silva",
                             "email": "joao.silva@exemplo.com",
+                            "date_joined": "2025-01-15T10:30:00Z",
                         },
                     )
                 ],
@@ -441,7 +443,11 @@ class UserProfileView(APIView):
         **Campos editáveis:**
         - first_name: Primeiro nome
         - last_name: Sobrenome
-        - Outros campos não-sensíveis
+        
+        **Campos somente leitura:**
+        - username: Nome de usuário (imutável)
+        - email: Email (requer processo de change request separado)
+        - date_joined: Data de registro (imutável)
         
         **Restrições:**
         - Email requer processo de change request
@@ -459,6 +465,8 @@ class UserProfileView(APIView):
                             "username": "usuario_exemplo",
                             "first_name": "João Carlos",
                             "last_name": "Silva Santos",
+                            "email": "joao.silva@exemplo.com",
+                            "date_joined": "2025-01-15T10:30:00Z",
                         },
                     )
                 ],
@@ -908,7 +916,7 @@ class UserDeactivateView(APIView):
             "is_active": user.is_active,
             "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
         }
-        
+
         AuditService.log_action(
             action=AuditLog.AuditAction.UPDATE,
             content_object=user,

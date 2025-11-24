@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from corsheaders.defaults import default_headers
 
 import environ
 
@@ -28,6 +29,16 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env.bool("DEBUG", default=False)
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
+
+# CORS Settings
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "correlation-id",
+    "x-request-id",
+]
+
+CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=True)
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
 
 # Applications
 INSTALLED_APPS = [
