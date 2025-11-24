@@ -19,7 +19,7 @@ O sistema deve suportar **autenticação** e **autorização por cargos**, garan
 
 ## Contextos Principais
 
-### 1) Identity (Usuários + Autenticação)
+### 1 Identity (Usuários + Autenticação)
 
 **MVP**
 
@@ -39,7 +39,7 @@ O sistema deve suportar **autenticação** e **autorização por cargos**, garan
 
 ---
 
-### 2) Clients (Clientes da Companhia)
+### 2 Clients (Clientes da Companhia)
 
 **MVP**
 
@@ -53,7 +53,7 @@ O sistema deve suportar **autenticação** e **autorização por cargos**, garan
 
 ---
 
-### 3) PER/DCOMPs (por Cliente)
+### 3 PER/DCOMPs (por Cliente)
 
 **MVP**
 
@@ -67,7 +67,7 @@ O sistema deve suportar **autenticação** e **autorização por cargos**, garan
 
 ---
 
-### 4) Admin (BackOffice)
+### 4 Admin (BackOffice)
 
 > Detalhes em `ADMIN.md`. No escopo geral, o BackOffice deve permitir:
 
