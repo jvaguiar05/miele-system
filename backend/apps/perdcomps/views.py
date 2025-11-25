@@ -218,8 +218,8 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
     """ViewSet para gerenciamento de anotações dos PER/DCOMPs.
 
     Endpoints:
-    POST /api/v1/perdcomps/annotations/{perdcomp_id}/ - Criar anotação para PER/DCOMP
-    GET /api/v1/perdcomps/annotations/{perdcomp_id}/ - Listar anotações do PER/DCOMP
+    POST /api/v1/perdcomps/annotations/by-perdcomp/{perdcomp_id}/ - Criar anotação para PER/DCOMP
+    GET /api/v1/perdcomps/annotations/by-perdcomp/{perdcomp_id}/ - Listar anotações do PER/DCOMP
     PUT /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar anotação completa
     PATCH /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar apenas campo 'text'
     DELETE /api/v1/perdcomps/annotations/{annotation_id}/ - Excluir anotação
@@ -491,7 +491,13 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return super().update(request, *args, **kwargs)
+        # For individual annotation operations, update directly
+        instance = self.get_object()
+        instance.content = content
+        instance.save()
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     @extend_schema(
         summary="Atualizar parcialmente anotação do PER/DCOMP",
@@ -566,13 +572,12 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         updated_content = current_content.copy()
         updated_content["text"] = content["text"]
 
-        # Preparar dados para serializer com content completo
-        data = {"content": updated_content}
+        # Atualizar diretamente no modelo
+        annotation.content = updated_content
+        annotation.save()
 
-        serializer = self.get_serializer(annotation, data=data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-
+        # Serializar a resposta
+        serializer = self.get_serializer(annotation)
         return Response(serializer.data)
 
     @extend_schema(

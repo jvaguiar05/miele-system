@@ -16,7 +16,7 @@ router.register(
 # Custom path for annotations with perdcomp_id as parameter
 urlpatterns = [
     path(
-        "annotations/<uuid:perdcomp_id>/",
+        "annotations/by-perdcomp/<uuid:perdcomp_id>/",
         PerDcompAnnotationViewSet.as_view({"post": "create", "get": "list"}),
         name="perdcomp-annotations",
     ),

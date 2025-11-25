@@ -306,8 +306,8 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     - POST sempre faz upsert (cria nova ou atualiza existente)
 
     **Endpoints:**
-    - POST /api/v1/clients/annotations/{client_id}/ - Criar/atualizar anotação para cliente
-    - GET /api/v1/clients/annotations/{client_id}/ - Listar anotações do cliente
+    - POST /api/v1/clients/annotations/by-client/{client_id}/ - Criar/atualizar anotação para cliente
+    - GET /api/v1/clients/annotations/by-client/{client_id}/ - Listar anotações do cliente
     - PUT /api/v1/clients/annotations/{annotation_id}/ - Atualizar anotação completa
     - PATCH /api/v1/clients/annotations/{annotation_id}/ - Atualizar apenas campo 'text'
     - DELETE /api/v1/clients/annotations/{annotation_id}/ - Excluir anotação
@@ -549,28 +549,33 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return super().update(request, *args, **kwargs)
+        # For individual annotation operations, update directly
+        instance = self.get_object()
+        instance.content = content
+        instance.save()
 
-    @extend_schema(
-        summary="Atualizar parcialmente anotação do cliente",
-        description="""Atualiza apenas o campo 'text' dentro do conteúdo da anotação do cliente.
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data) @ extend_schema(
+            summary="Atualizar parcialmente anotação do cliente",
+            description="""Atualiza apenas o campo 'text' dentro do conteúdo da anotação do cliente.
         
         **Importante:** Este endpoint permite apenas a atualização do campo 'text' dentro do objeto 'content'.
         Outros campos do conteúdo não serão modificados. Para atualizações completas, use PUT.
         """,
-        request=ClientAnnotationSerializer,
-        responses={
-            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
-            400: OpenApiResponse(description="Dados inválidos"),
-            404: OpenApiResponse(description="Cliente ou anotação não encontrados"),
-        },
-        examples=[
-            OpenApiExample(
-                "Atualização parcial do texto",
-                value={"content": {"text": "Texto atualizado da anotação"}},
-            )
-        ],
-    )
+            request=ClientAnnotationSerializer,
+            responses={
+                200: OpenApiResponse(description="Anotação atualizada com sucesso"),
+                400: OpenApiResponse(description="Dados inválidos"),
+                404: OpenApiResponse(description="Cliente ou anotação não encontrados"),
+            },
+            examples=[
+                OpenApiExample(
+                    "Atualização parcial do texto",
+                    value={"content": {"text": "Texto atualizado da anotação"}},
+                )
+            ],
+        )
+
     def partial_update(self, request, *args, **kwargs):
         """Atualização parcial da anotação - apenas campo 'text' do content."""
         # Validar que apenas o campo 'text' do content está sendo atualizado
@@ -614,13 +619,12 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         updated_content = current_content.copy()
         updated_content["text"] = content["text"]
 
-        # Preparar dados para serializer com content completo
-        data = {"content": updated_content}
+        # Atualizar diretamente a anotação
+        annotation.content = updated_content
+        annotation.save()
 
-        serializer = self.get_serializer(annotation, data=data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-
+        # Retornar resposta serializada
+        serializer = self.get_serializer(annotation)
         return Response(serializer.data)
 
     @extend_schema(
