@@ -555,27 +555,28 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         instance.save()
 
         serializer = self.get_serializer(instance)
-        return Response(serializer.data) @ extend_schema(
-            summary="Atualizar parcialmente anotação do cliente",
-            description="""Atualiza apenas o campo 'text' dentro do conteúdo da anotação do cliente.
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Atualizar parcialmente anotação do cliente",
+        description="""Atualiza apenas o campo 'text' dentro do conteúdo da anotação do cliente.
         
         **Importante:** Este endpoint permite apenas a atualização do campo 'text' dentro do objeto 'content'.
         Outros campos do conteúdo não serão modificados. Para atualizações completas, use PUT.
         """,
-            request=ClientAnnotationSerializer,
-            responses={
-                200: OpenApiResponse(description="Anotação atualizada com sucesso"),
-                400: OpenApiResponse(description="Dados inválidos"),
-                404: OpenApiResponse(description="Cliente ou anotação não encontrados"),
-            },
-            examples=[
-                OpenApiExample(
-                    "Atualização parcial do texto",
-                    value={"content": {"text": "Texto atualizado da anotação"}},
-                )
-            ],
-        )
-
+        request=ClientAnnotationSerializer,
+        responses={
+            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
+            400: OpenApiResponse(description="Dados inválidos"),
+            404: OpenApiResponse(description="Cliente ou anotação não encontrados"),
+        },
+        examples=[
+            OpenApiExample(
+                "Atualização parcial do texto",
+                value={"content": {"text": "Texto atualizado da anotação"}},
+            )
+        ],
+    )
     def partial_update(self, request, *args, **kwargs):
         """Atualização parcial da anotação - apenas campo 'text' do content."""
         # Validar que apenas o campo 'text' do content está sendo atualizado
