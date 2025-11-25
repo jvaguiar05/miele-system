@@ -367,12 +367,13 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         return obj
 
     @extend_schema(
-        summary="Criar ou atualizar anotação para cliente",
+        summary="Criar nova anotação para cliente",
         description="""
-        Cria uma nova anotação para um cliente específico ou atualiza a anotação existente.
+        Cria uma nova anotação para um cliente específico.
         
         **Importante:** Cada usuário pode ter apenas UMA anotação por cliente.
-        Se uma anotação já existir para este usuário e cliente, ela será atualizada.
+        Se você já possui uma anotação para este cliente, use PUT para atualizar
+        ou DELETE para remover a anotação existente antes de criar uma nova.
         
         O client_id deve ser fornecido na URL como parâmetro.
         O content deve ser um objeto JSON com a estrutura desejada.
@@ -380,8 +381,7 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         request=ClientAnnotationSerializer,
         responses={
             201: OpenApiResponse(description="Anotação criada com sucesso"),
-            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
-            400: OpenApiResponse(description="Dados inválidos"),
+            400: OpenApiResponse(description="Dados inválidos ou anotação já existe"),
             404: OpenApiResponse(description="Cliente não encontrado"),
         },
         examples=[
@@ -399,7 +399,7 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         ],
     )
     def create(self, request, *args, **kwargs):
-        """Criar ou atualizar anotação com client_id obtido da URL."""
+        """Criar nova anotação com client_id obtido da URL."""
         # Obter client_id da URL
         client_id = kwargs.get("client_id")
 
@@ -511,9 +511,12 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         """,
         request=ClientAnnotationSerializer,
         responses={
-            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
+            201: OpenApiResponse(description="Anotação criada com sucesso"),
             400: OpenApiResponse(description="Dados inválidos"),
-            404: OpenApiResponse(description="Cliente ou anotação não encontrados"),
+            404: OpenApiResponse(description="Cliente não encontrado"),
+            409: OpenApiResponse(
+                description="Anotação já existe para este usuário e cliente"
+            ),
         },
         examples=[
             OpenApiExample(

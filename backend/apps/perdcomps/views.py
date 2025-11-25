@@ -278,12 +278,13 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         return obj
 
     @extend_schema(
-        summary="Criar ou atualizar anotação para PER/DCOMP",
+        summary="Criar nova anotação para PER/DCOMP",
         description="""
-        Cria uma nova anotação para um PER/DCOMP específico ou atualiza a anotação existente.
+        Cria uma nova anotação para um PER/DCOMP específico.
         
         **Importante:** Cada usuário pode ter apenas UMA anotação por PER/DCOMP.
-        Se uma anotação já existir para este usuário e PER/DCOMP, ela será atualizada.
+        Se você já possui uma anotação para este PER/DCOMP, use PUT para atualizar
+        ou DELETE para remover a anotação existente antes de criar uma nova.
         
         O perdcomp_id deve ser fornecido na URL como parâmetro.
         O content deve ser um objeto JSON com a estrutura desejada.
@@ -291,8 +292,7 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         request=PerDcompAnnotationSerializer,
         responses={
             201: OpenApiResponse(description="Anotação criada com sucesso"),
-            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
-            400: OpenApiResponse(description="Dados inválidos"),
+            400: OpenApiResponse(description="Dados inválidos ou anotação já existe"),
             404: OpenApiResponse(description="PER/DCOMP não encontrado"),
         },
         examples=[
@@ -310,7 +310,7 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         ],
     )
     def create(self, request, *args, **kwargs):
-        """Criar ou atualizar anotação com perdcomp_id obtido da URL."""
+        """Criar nova anotação com perdcomp_id obtido da URL."""
         # Obter perdcomp_id da URL
         perdcomp_id = kwargs.get("perdcomp_id")
 
@@ -453,9 +453,12 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         """,
         request=PerDcompAnnotationSerializer,
         responses={
-            200: OpenApiResponse(description="Anotação atualizada com sucesso"),
+            201: OpenApiResponse(description="Anotação criada com sucesso"),
             400: OpenApiResponse(description="Dados inválidos"),
-            404: OpenApiResponse(description="Anotação não encontrada"),
+            404: OpenApiResponse(description="PER/DCOMP não encontrado"),
+            409: OpenApiResponse(
+                description="Anotação já existe para este usuário e PER/DCOMP"
+            ),
         },
         examples=[
             OpenApiExample(
