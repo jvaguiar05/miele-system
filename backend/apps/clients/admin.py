@@ -100,8 +100,8 @@ class ClientAdmin(admin.ModelAdmin):
         (
             "Endereço",
             {
-                "fields": ("address_id",),
-                "description": "ID do endereço associado (para vincular use o campo Address ID)",
+                "fields": ("address",),
+                "description": "Endereço associado ao cliente",
             },
         ),
         (

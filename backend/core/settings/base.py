@@ -201,10 +201,6 @@ SPECTACULAR_SETTINGS = {
             "description": "Endpoints relacionados a clientes",
         },
         {
-            "name": "Endereços",
-            "description": "Endpoints relacionados a endereços de clientes",
-        },
-        {
             "name": "Clientes - Anotações",
             "description": "Endpoints relacionados às anotações feitas por usuários em clientes",
         },

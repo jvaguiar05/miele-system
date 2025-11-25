@@ -19,13 +19,13 @@ class Address(models.Model):
     # ID público (UUID) para exposição segura
     public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
-    logradouro = models.CharField(max_length=255, help_text="Logradouro")
-    numero = models.CharField(max_length=20, help_text="Número")
+    logradouro = models.CharField(max_length=255, blank=True, help_text="Logradouro")
+    numero = models.CharField(max_length=20, blank=True, help_text="Número")
     complemento = models.CharField(max_length=255, blank=True, help_text="Complemento")
-    bairro = models.CharField(max_length=100, help_text="Bairro")
-    municipio = models.CharField(max_length=100, help_text="Município")
-    uf = models.CharField(max_length=2, help_text="UF")
-    cep = models.CharField(max_length=10, help_text="CEP")
+    bairro = models.CharField(max_length=100, blank=True, help_text="Bairro")
+    municipio = models.CharField(max_length=100, blank=True, help_text="Município")
+    uf = models.CharField(max_length=2, blank=True, help_text="UF")
+    cep = models.CharField(max_length=10, blank=True, help_text="CEP")
 
     # Auditoria
     created_at = models.DateTimeField(default=timezone.now)
@@ -147,9 +147,14 @@ class Client(models.Model):
         default=True, null=True, blank=True, help_text="Cliente ativo no sistema"
     )
 
-    # Relacionamentos - FK usando ID interno (BigInt)
-    address_id = models.BigIntegerField(
-        null=True, blank=True, help_text="ID do endereço do cliente"
+    # Relacionamentos
+    address = models.OneToOneField(
+        Address,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="client",
+        help_text="Endereço do cliente",
     )
 
     # Auditoria
@@ -166,21 +171,11 @@ class Client(models.Model):
             models.Index(fields=["client_status"]),
             models.Index(fields=["is_active"]),
             models.Index(fields=["created_at"]),
-            models.Index(fields=["address_id"]),
+            models.Index(fields=["address"]),
         ]
 
     def __str__(self):
         return f"{self.razao_social} ({self.cnpj})"
-
-    @property
-    def address(self):
-        """Propriedade para acessar o endereço relacionado."""
-        if self.address_id:
-            try:
-                return Address.objects.get(id=self.address_id, deleted_at__isnull=True)
-            except Address.DoesNotExist:
-                return None
-        return None
 
     def soft_delete(self):
         """Exclusão lógica."""

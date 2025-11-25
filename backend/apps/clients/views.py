@@ -37,14 +37,72 @@ class PingView(APIView):
 @extend_schema(
     tags=["Clientes"],
     summary="Gerenciamento de clientes",
-    description="Endpoints para CRUD completo de clientes. No POST, o endereço é criado automaticamente junto com o cliente.",
+    description="""Endpoints para CRUD completo de clientes. 
+    
+    **POST**: Cria cliente e sempre cria um endereço (mesmo que vazio se não fornecido). 
+    Use campos planos para o endereço (logradouro, numero, bairro, municipio, uf, cep).
+    
+    **PUT**: Atualiza cliente e endereço completamente. Use os mesmos campos planos do endereço.
+    JSONFields vazios podem ser passados como strings vazias "" (serão convertidos automaticamente).
+    """,
+    examples=[
+        OpenApiExample(
+            "PUT - Atualização completa do cliente",
+            value={
+                "razao_social": "Empresa Atualizada LTDA",
+                "nome_fantasia": "Nova Fantasia",
+                "cnpj": "12.345.678/0001-90",
+                "inscricao_estadual": "987.654.321.098",
+                "inscricao_municipal": "1122334455",
+                "tipo_empresa": "LTDA",
+                "recuperacao_judicial": False,
+                "telefone_comercial": "(11) 8888-7777",
+                "email_comercial": "novo@exemplo.com",
+                "website": "https://www.novosite.com",
+                "telefone_contato": "(11) 6666-5555",
+                "email_contato": "contato@novosite.com",
+                "quadro_societario": [
+                    {"nome": "Pedro Costa", "participacao": "60%"},
+                    {"nome": "Ana Silva", "participacao": "40%"},
+                ],
+                "cargos": {"ceo": "Pedro Costa", "cto": "Ana Silva"},
+                "responsavel_financeiro": "Ana Silva",
+                "contador_responsavel": "Roberto Contador",
+                "cnaes": ["6201-5/00", "7210-0/00"],
+                "regime_tributacao": "lucro_real",
+                "contrato_social": "Contrato atualizado em 2024",
+                "ultima_alteracao_contratual": "2024-01-15",
+                "rg_cpf_socios": "Pedro: CPF 987.654.321-00",
+                "certificado_digital": "Válido até 31/12/2025",
+                "autorizado_para_envio": True,
+                "atividades": {
+                    "principal": "Desenvolvimento de software avançado",
+                    "secundarias": ["Consultoria", "Treinamento"],
+                },
+                "client_status": "active",
+                "is_active": True,
+                # Atualizar endereço também
+                "logradouro": "Av. Paulista",
+                "numero": "1000",
+                "complemento": "Conj. 2001",
+                "bairro": "Bela Vista",
+                "municipio": "São Paulo",
+                "uf": "SP",
+                "cep": "01310-100",
+            },
+        ),
+    ],
 )
 class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     """
     ViewSet para gerenciamento de clientes com criação automática de endereço.
 
-    POST: Cria cliente e endereço automaticamente. Forneça os dados do cliente
-    junto com os campos do endereço (logradouro, numero, bairro, municipio, uf, cep).
+    POST: Cria cliente e sempre cria um endereço (mesmo que vazio se dados não fornecidos).
+    Forneça os dados do cliente junto com os campos opcionais do endereço
+    (logradouro, numero, bairro, municipio, uf, cep).
+
+    PUT: Atualiza cliente e endereço automaticamente. Use os mesmos campos planos
+    do endereço para atualizar o endereço existente.
     """
 
     serializer_class = ClientSerializer
@@ -59,8 +117,8 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     approval_resource_type = "clients.Client"
 
     def get_queryset(self):
-        """Filtrar apenas clientes não excluídos."""
-        return Client.objects.filter(deleted_at__isnull=True)
+        """Filtrar apenas clientes não excluídos e incluir endereço."""
+        return Client.objects.filter(deleted_at__isnull=True).select_related("address")
 
     def get_object(self):
         """Buscar objeto por public_id."""
@@ -99,7 +157,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         description="Cria um novo cliente junto com seu endereço automaticamente. Todos os campos do cliente estão disponíveis, incluindo dados do endereço.",
         examples=[
             OpenApiExample(
-                "Exemplo completo",
+                "Exemplo completo com todos os campos",
                 value={
                     # Dados principais do cliente
                     "razao_social": "Empresa Exemplo LTDA",
@@ -116,9 +174,10 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     # Contatos diretos
                     "telefone_contato": "(11) 9999-8888",
                     "email_contato": "financeiro@exemplo.com",
-                    # Dados societários
+                    # Dados societários (JSONFields - use arrays/objects)
                     "quadro_societario": [
-                        {"nome": "João Silva", "participacao": "50%"}
+                        {"nome": "João Silva", "participacao": "50%"},
+                        {"nome": "Maria Santos", "participacao": "50%"},
                     ],
                     "cargos": {"diretor": "João Silva", "gerente": "Maria Santos"},
                     "responsavel_financeiro": "Maria Santos",
@@ -128,15 +187,18 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "regime_tributacao": "lucro_presumido",
                     # Documentos
                     "contrato_social": "Contrato registrado em 01/01/2023",
-                    "ultima_alteracao_contratual": "2023-06-15T00:00:00Z",
+                    "ultima_alteracao_contratual": "2023-06-15",
                     "rg_cpf_socios": "João: CPF 123.456.789-00",
                     "certificado_digital": "Válido até 31/12/2024",
                     # Controles
                     "autorizado_para_envio": True,
-                    "atividades": {"principal": "Desenvolvimento de software"},
+                    "atividades": {
+                        "principal": "Desenvolvimento de software",
+                        "secundarias": ["Consultoria em TI"],
+                    },
                     "client_status": "active",
                     "is_active": True,
-                    # Dados do endereço (obrigatórios se fornecidos)
+                    # Dados do endereço (todos opcionais)
                     "logradouro": "Rua das Flores",
                     "numero": "123",
                     "complemento": "Sala 456",
@@ -147,16 +209,36 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                 },
             ),
             OpenApiExample(
-                "Exemplo mínimo",
+                "Exemplo mínimo (apenas campos obrigatórios)",
                 value={
                     "razao_social": "Empresa Simples LTDA",
                     "cnpj": "98.765.432/0001-10",
-                    "logradouro": "Av. Principal",
-                    "numero": "456",
-                    "bairro": "Vila Nova",
-                    "municipio": "Rio de Janeiro",
-                    "uf": "RJ",
-                    "cep": "20000-000",
+                    # JSONFields podem ser omitidos (usarão defaults) ou vazios:
+                    "quadro_societario": [],
+                    "cargos": {},
+                    "cnaes": [],
+                    "atividades": {},
+                    # Endereço será criado vazio automaticamente
+                },
+            ),
+            OpenApiExample(
+                "Exemplo com strings vazias (serão convertidas)",
+                value={
+                    "razao_social": "Teste de Conversão LTDA",
+                    "cnpj": "11.222.333/0001-44",
+                    "nome_fantasia": "Teste",
+                    # Strings vazias serão convertidas automaticamente:
+                    "quadro_societario": "",  # Vira []
+                    "cargos": "",  # Vira {}
+                    "cnaes": "",  # Vira []
+                    "atividades": "",  # Vira {}
+                    # Endereço com campos vazios
+                    "logradouro": "",
+                    "numero": "",
+                    "bairro": "",
+                    "municipio": "",
+                    "uf": "",
+                    "cep": "",
                 },
             ),
         ],
@@ -249,46 +331,6 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
             },
             status=status.HTTP_202_ACCEPTED,
         )
-
-
-@extend_schema(
-    tags=["Endereços"],
-    summary="Gerenciamento de endereços",
-    description="Endpoints para CRUD de endereços de clientes.",
-)
-class AddressViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para gerenciamento de endereços.
-    """
-
-    serializer_class = AddressSerializer
-    lookup_field = "public_id"
-    permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["uf", "municipio"]
-    search_fields = ["logradouro", "bairro", "municipio", "cep"]
-    ordering_fields = ["created_at", "municipio"]
-    ordering = ["-created_at"]
-
-    def get_queryset(self):
-        """Filtrar apenas endereços não excluídos."""
-        return Address.objects.filter(deleted_at__isnull=True)
-
-    def get_object(self):
-        """Buscar objeto por public_id."""
-        queryset = self.filter_queryset(self.get_queryset())
-        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-        lookup_value = self.kwargs[lookup_url_kwarg]
-
-        try:
-            obj = queryset.get(**{self.lookup_field: lookup_value})
-        except Address.DoesNotExist:
-            from django.http import Http404
-
-            raise Http404("Endereço não encontrado.")
-
-        self.check_object_permissions(self.request, obj)
-        return obj
 
 
 @extend_schema(
@@ -422,32 +464,18 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         data["entity_type"] = "client"
         data["entity_id"] = str(client_id)
 
-        # Usar o serializer que tem a lógica de upsert
+        # Usar o serializer normal para criação
         serializer = ClientAnnotationSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
+        annotation = serializer.save()
 
-        # Verificar se já existe anotação para este usuário e cliente
-        user_id = request.user.id
-        existing_annotation = Annotation.objects.filter(
-            user_id=user_id,
-            content_type__app_label="clients",
-            content_type__model="client",
-            object_id=client.id,
-            deleted_at__isnull=True,
-        ).first()
-
-        is_update = existing_annotation is not None
-        annotation = (
-            serializer.save()
-        )  # Aqui o serializer faz create ou update automaticamente
-
-        # Retornar resposta com status apropriado
+        # Retornar resposta de criação
         response_serializer = self.get_serializer(annotation)
         headers = self.get_success_headers(response_serializer.data)
 
-        status_code = status.HTTP_200_OK if is_update else status.HTTP_201_CREATED
-
-        return Response(response_serializer.data, status=status_code, headers=headers)
+        return Response(
+            response_serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )
 
     @extend_schema(
         summary="Listar anotações do cliente",
@@ -642,10 +670,6 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """Excluir anotação."""
         return super().destroy(request, *args, **kwargs)
-
-    def perform_create(self, serializer):
-        """Automaticamente definir o usuário como o usuário logado."""
-        serializer.save()
 
 
 @extend_schema(

@@ -185,30 +185,59 @@ class ClientSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         """Validar que os campos do endereço estão completos se fornecidos."""
         address_fields = ["logradouro", "numero", "bairro", "municipio", "uf", "cep"]
-        address_data = {
-            field: attrs.get(field) for field in address_fields if field in attrs
+
+        # Check if any address field has actual content (not empty string)
+        address_data_with_content = {
+            field: attrs.get(field)
+            for field in address_fields
+            if field in attrs and attrs.get(field)  # Only non-empty values
         }
 
-        if address_data:
-            # Se algum campo de endereço foi fornecido, verificar os obrigatórios
-            required_fields = [
-                "logradouro",
-                "numero",
-                "bairro",
-                "municipio",
-                "uf",
-                "cep",
-            ]
-            missing_fields = [
-                field for field in required_fields if not attrs.get(field)
+        # Only validate if there's actually meaningful address content
+        if address_data_with_content:
+            # Verificar se pelo menos alguns campos essenciais foram fornecidos
+            # (não exigir todos, mas pelo menos logradouro e municipio para ser útil)
+            essential_fields = ["logradouro", "municipio"]
+            provided_essential = [
+                field
+                for field in essential_fields
+                if attrs.get(field) and attrs.get(field).strip()
             ]
 
-            if missing_fields:
-                raise serializers.ValidationError(
-                    f"Campos obrigatórios do endereço: {', '.join(missing_fields)}"
-                )
+            # Se algum campo de endereço foi fornecido, sugerir completar os essenciais
+            if len(provided_essential) < len(essential_fields):
+                missing_fields = [
+                    field
+                    for field in essential_fields
+                    if not attrs.get(field) or not attrs.get(field).strip()
+                ]
+                # Apenas um warning, não uma validação hard
+                # raise serializers.ValidationError(
+                #     f"Quando fornecendo endereço, recomenda-se incluir: {', '.join(missing_fields)}"
+                # )
 
         return super().validate(attrs)
+
+    def to_internal_value(self, data):
+        """Convert empty strings to proper defaults for JSONFields."""
+        # Handle JSONFields that can't accept empty strings
+        json_fields_defaults = {
+            "quadro_societario": [],
+            "cargos": {},
+            "cnaes": [],
+            "atividades": {},
+        }
+
+        # Create a mutable copy of the data if needed
+        if hasattr(data, "_mutable"):
+            data._mutable = True
+
+        # Convert empty strings to appropriate defaults for JSONFields
+        for field, default_value in json_fields_defaults.items():
+            if field in data and data[field] == "":
+                data[field] = default_value
+
+        return super().to_internal_value(data)
 
     def create(self, validated_data):
         """Criar cliente com endereço automaticamente."""
@@ -228,19 +257,28 @@ class ClientSerializer(serializers.ModelSerializer):
             if field in validated_data:
                 address_data[field] = validated_data.pop(field)
 
-        # Criar endereço se dados foram fornecidos
-        address_id = None
-        if address_data:
-            address = Address.objects.create(**address_data)
-            address_id = address.id
+        # Sempre criar um endereço (mesmo que vazio) para manter consistência
+        # Se nenhum dado foi fornecido, criar com campos vazios
+        if not address_data:
+            address_data = {
+                "logradouro": "",
+                "numero": "",
+                "complemento": "",
+                "bairro": "",
+                "municipio": "",
+                "uf": "",
+                "cep": "",
+            }
+
+        address = Address.objects.create(**address_data)
 
         # Criar cliente com referência ao endereço
-        validated_data["address_id"] = address_id
+        validated_data["address"] = address
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        """Atualizar cliente (endereço não é alterado via este serializer)."""
-        # Remover campos de endereço se fornecidos (não suportado no update)
+        """Atualizar cliente e endereço automaticamente."""
+        # Extrair dados do endereço
         address_fields = [
             "logradouro",
             "numero",
@@ -250,8 +288,24 @@ class ClientSerializer(serializers.ModelSerializer):
             "uf",
             "cep",
         ]
+        address_data = {}
+
         for field in address_fields:
-            validated_data.pop(field, None)
+            if field in validated_data:
+                address_data[field] = validated_data.pop(field)
+
+        # Atualizar endereço se dados foram fornecidos
+        if address_data:
+            if instance.address:
+                # Atualizar endereço existente
+                for field, value in address_data.items():
+                    setattr(instance.address, field, value)
+                instance.address.save()
+            else:
+                # Criar novo endereço se não existe
+                address = Address.objects.create(**address_data)
+                instance.address = address
+                instance.save()
 
         return super().update(instance, validated_data)
 
