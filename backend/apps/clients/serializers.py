@@ -36,15 +36,15 @@ class AddressSerializer(serializers.ModelSerializer):
 class ClientAnnotationSerializer(AnnotationSerializer):
     """Serializer para anotações de clientes."""
 
-    # Substituir entity_type e entity_id por client_id do header
-    entity_type = None  # Não expor este campo
-    entity_id = None  # Não expor este campo
-    # client_id será obtido do header, não do body
+    # Add entity fields as write-only to allow validation
+    entity_type = serializers.CharField(write_only=True, required=False)
+    entity_id = serializers.UUIDField(write_only=True, required=False)
 
     class Meta(AnnotationSerializer.Meta):
         fields = [
             "id",
-            # client_id removido - vem do header
+            "entity_type",  # Add back for validation
+            "entity_id",  # Add back for validation
             "entity_name",
             "user_name",
             "content",
@@ -60,8 +60,9 @@ class ClientAnnotationSerializer(AnnotationSerializer):
         ]
 
     def validate(self, attrs):
-        # client_id será injetado no view a partir do header
-        # Não precisamos fazer nada aqui, será tratado no view
+        """Handle entity fields injected by the view."""
+        # The view injects entity_type and entity_id before calling validate
+        # We need to allow parent validation to run to convert these to content_type/object_id
         return super().validate(attrs)
 
 
