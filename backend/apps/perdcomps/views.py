@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from drf_spectacular.utils import extend_schema
 from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
+from django.db import models
 
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
@@ -60,7 +61,14 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["status", "is_active", "tributo_pedido"]
-    search_fields = ["numero_perdcomp", "numero", "cnpj", "processo_protocolo"]
+    search_fields = [
+        "numero_perdcomp",
+        "numero",
+        "cnpj",
+        "processo_protocolo",
+        "tributo_pedido",
+        "competencia",
+    ]
     ordering_fields = ["created_at", "data_vencimento", "valor_pedido"]
     ordering = ["-created_at"]
 
