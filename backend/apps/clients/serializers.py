@@ -154,17 +154,15 @@ class ClientSerializer(serializers.ModelSerializer):
             "telefone_contato",
             "email_contato",
             "quadro_societario",
-            "cargos",
             "responsavel_financeiro",
             "contador_responsavel",
-            "cnaes",
+            "atividades",
             "regime_tributacao",
             "contrato_social",
             "ultima_alteracao_contratual",
             "rg_cpf_socios",
             "certificado_digital",
             "autorizado_para_envio",
-            "atividades",
             "client_status",
             "is_active",
             # Campos do endereço
@@ -223,9 +221,7 @@ class ClientSerializer(serializers.ModelSerializer):
         # Handle JSONFields that can't accept empty strings
         json_fields_defaults = {
             "quadro_societario": [],
-            "cargos": {},
-            "cnaes": [],
-            "atividades": {},
+            "atividades": [],
         }
 
         # Create a mutable copy of the data if needed
@@ -238,6 +234,57 @@ class ClientSerializer(serializers.ModelSerializer):
                 data[field] = default_value
 
         return super().to_internal_value(data)
+
+    def validate_quadro_societario(self, value):
+        """Validate quadro_societario structure."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("quadro_societario deve ser uma lista.")
+
+        for i, socio in enumerate(value):
+            if not isinstance(socio, dict):
+                raise serializers.ValidationError(
+                    f"Item {i+1} deve ser um objeto com 'nome' e 'cargo'."
+                )
+
+            required_fields = ["nome", "cargo"]
+            for field in required_fields:
+                if field not in socio:
+                    raise serializers.ValidationError(
+                        f"Item {i+1}: campo '{field}' é obrigatório."
+                    )
+                if not isinstance(socio[field], str) or not socio[field].strip():
+                    raise serializers.ValidationError(
+                        f"Item {i+1}: campo '{field}' deve ser uma string não vazia."
+                    )
+
+        return value
+
+    def validate_atividades(self, value):
+        """Validate atividades structure."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("atividades deve ser uma lista.")
+
+        for i, atividade in enumerate(value):
+            if not isinstance(atividade, dict):
+                raise serializers.ValidationError(
+                    f"Item {i+1} deve ser um objeto com 'cnae' e 'descricao'."
+                )
+
+            required_fields = ["cnae", "descricao"]
+            for field in required_fields:
+                if field not in atividade:
+                    raise serializers.ValidationError(
+                        f"Item {i+1}: campo '{field}' é obrigatório."
+                    )
+                if (
+                    not isinstance(atividade[field], str)
+                    or not atividade[field].strip()
+                ):
+                    raise serializers.ValidationError(
+                        f"Item {i+1}: campo '{field}' deve ser uma string não vazia."
+                    )
+
+        return value
 
     def create(self, validated_data):
         """Criar cliente com endereço automaticamente."""

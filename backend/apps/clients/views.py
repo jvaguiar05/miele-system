@@ -62,23 +62,21 @@ class PingView(APIView):
                 "telefone_contato": "(11) 6666-5555",
                 "email_contato": "contato@novosite.com",
                 "quadro_societario": [
-                    {"nome": "Pedro Costa", "participacao": "60%"},
-                    {"nome": "Ana Silva", "participacao": "40%"},
+                    {"nome": "Pedro Costa", "cargo": "Sócio-Administrador"},
+                    {"nome": "Ana Silva", "cargo": "Sócia"},
                 ],
-                "cargos": {"ceo": "Pedro Costa", "cto": "Ana Silva"},
                 "responsavel_financeiro": "Ana Silva",
                 "contador_responsavel": "Roberto Contador",
-                "cnaes": ["6201-5/00", "7210-0/00"],
+                "atividades": [
+                    {"cnae": "6201-5/00", "descricao": "Desenvolvimento de software"},
+                    {"cnae": "7210-0/00", "descricao": "Consultoria em TI"},
+                ],
                 "regime_tributacao": "lucro_real",
                 "contrato_social": "Contrato atualizado em 2024",
                 "ultima_alteracao_contratual": "2024-01-15",
                 "rg_cpf_socios": "Pedro: CPF 987.654.321-00",
                 "certificado_digital": "Válido até 31/12/2025",
                 "autorizado_para_envio": True,
-                "atividades": {
-                    "principal": "Desenvolvimento de software avançado",
-                    "secundarias": ["Consultoria", "Treinamento"],
-                },
                 "client_status": "active",
                 "is_active": True,
                 # Atualizar endereço também
@@ -172,14 +170,22 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "email_contato": "financeiro@exemplo.com",
                     # Dados societários (JSONFields - use arrays/objects)
                     "quadro_societario": [
-                        {"nome": "João Silva", "participacao": "50%"},
-                        {"nome": "Maria Santos", "participacao": "50%"},
+                        {"nome": "João Silva", "cargo": "Sócio-Administrador"},
+                        {"nome": "Maria Santos", "cargo": "Sócia"},
                     ],
-                    "cargos": {"diretor": "João Silva", "gerente": "Maria Santos"},
                     "responsavel_financeiro": "Maria Santos",
                     "contador_responsavel": "Carlos Oliveira",
                     # Dados fiscais
-                    "cnaes": ["6201-5/00", "6202-3/00"],
+                    "atividades": [
+                        {
+                            "cnae": "6201-5/00",
+                            "descricao": "Desenvolvimento de software sob encomenda",
+                        },
+                        {
+                            "cnae": "6202-3/00",
+                            "descricao": "Desenvolvimento e licenciamento de programas de computador customizáveis",
+                        },
+                    ],
                     "regime_tributacao": "lucro_presumido",
                     # Documentos
                     "contrato_social": "Contrato registrado em 01/01/2023",
@@ -188,10 +194,6 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "certificado_digital": "Válido até 31/12/2024",
                     # Controles
                     "autorizado_para_envio": True,
-                    "atividades": {
-                        "principal": "Desenvolvimento de software",
-                        "secundarias": ["Consultoria em TI"],
-                    },
                     "client_status": "active",
                     "is_active": True,
                     # Dados do endereço (todos opcionais)
@@ -211,9 +213,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "cnpj": "98.765.432/0001-10",
                     # JSONFields podem ser omitidos (usarão defaults) ou vazios:
                     "quadro_societario": [],
-                    "cargos": {},
-                    "cnaes": [],
-                    "atividades": {},
+                    "atividades": [],
                     # Endereço será criado vazio automaticamente
                 },
             ),
@@ -225,9 +225,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
                     "nome_fantasia": "Teste",
                     # Strings vazias serão convertidas automaticamente:
                     "quadro_societario": "",  # Vira []
-                    "cargos": "",  # Vira {}
-                    "cnaes": "",  # Vira []
-                    "atividades": "",  # Vira {}
+                    "atividades": "",  # Vira []
                     # Endereço com campos vazios
                     "logradouro": "",
                     "numero": "",

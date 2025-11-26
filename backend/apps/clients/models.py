@@ -95,10 +95,9 @@ class Client(models.Model):
 
     # Dados societários e estruturais
     quadro_societario = models.JSONField(
-        default=list, blank=True, help_text="Quadro societário (lista de sócios)"
-    )
-    cargos = models.JSONField(
-        default=dict, blank=True, help_text="Cargos e responsabilidades"
+        default=list,
+        blank=True,
+        help_text="Quadro societário - lista com nome e cargo de cada sócio: [{'nome': 'Nome do Sócio', 'cargo': 'Cargo/Função'}]",
     )
     responsavel_financeiro = models.TextField(
         blank=True, help_text="Responsável financeiro"
@@ -108,7 +107,11 @@ class Client(models.Model):
     )
 
     # Dados fiscais
-    cnaes = models.JSONField(default=list, blank=True, help_text="CNAEs da empresa")
+    atividades = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Atividades da empresa - lista com CNAE e descrição: [{'cnae': 'Código CNAE', 'descricao': 'Descrição da atividade'}]",
+    )
     regime_tributacao = models.CharField(
         max_length=20,
         choices=RegimeTributacao.choices,
@@ -129,9 +132,6 @@ class Client(models.Model):
     # Controles
     autorizado_para_envio = models.BooleanField(
         default=False, help_text="Autorizado para envio"
-    )
-    atividades = models.JSONField(
-        default=dict, blank=True, help_text="Atividades da empresa"
     )
 
     # Status e controle
