@@ -94,28 +94,10 @@ class AnnotationSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        """Criar nova anotação (apenas uma por usuário por entidade)."""
+        """Criar nova anotação (permite múltiplas por usuário por entidade)."""
         user_id = self.context["request"].user.id
-        content_type = validated_data["content_type"]
-        object_id = validated_data["object_id"]
 
-        # Verificar se já existe anotação para este usuário e entidade
-        existing_annotation = Annotation.objects.filter(
-            user_id=user_id,
-            content_type=content_type,
-            object_id=object_id,
-            deleted_at__isnull=True,
-        ).first()
-
-        if existing_annotation:
-            raise serializers.ValidationError(
-                {
-                    "detail": "Você já possui uma anotação para esta entidade. Use PUT para atualizar ou DELETE para remover a anotação existente.",
-                    "existing_annotation_id": existing_annotation.public_id,
-                }
-            )
-
-        # Criar nova anotação
+        # Criar nova anotação diretamente sem verificar duplicatas
         validated_data["user_id"] = user_id
         return super().create(validated_data)
 

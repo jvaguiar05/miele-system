@@ -225,12 +225,18 @@ class PerDcompAttachedFileViewSet(viewsets.ModelViewSet):
 class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
     """ViewSet para gerenciamento de anotações dos PER/DCOMPs.
 
+    **Características importantes:**
+    - Cada usuário pode ter MÚLTIPLAS anotações por PER/DCOMP
+    - O campo 'content' é um objeto JSON que permite estruturas flexíveis
+    - Usuários podem ver todas as anotações de todos os usuários
+    - Usuários só podem editar/deletar suas próprias anotações
+
     Endpoints:
-    POST /api/v1/perdcomps/annotations/by-perdcomp/{perdcomp_id}/ - Criar anotação para PER/DCOMP
-    GET /api/v1/perdcomps/annotations/by-perdcomp/{perdcomp_id}/ - Listar anotações do PER/DCOMP
-    PUT /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar anotação completa
-    PATCH /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar apenas campo 'text'
-    DELETE /api/v1/perdcomps/annotations/{annotation_id}/ - Excluir anotação
+    POST /api/v1/perdcomps/annotations/by-perdcomp/{perdcomp_id}/ - Criar nova anotação para PER/DCOMP
+    GET /api/v1/perdcomps/annotations/by-perdcomp/{perdcomp_id}/ - Listar todas as anotações do PER/DCOMP
+    PUT /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar anotação completa (apenas próprias)
+    PATCH /api/v1/perdcomps/annotations/{annotation_id}/ - Atualizar apenas campo 'text' (apenas próprias)
+    DELETE /api/v1/perdcomps/annotations/{annotation_id}/ - Excluir anotação (apenas próprias)
     """
 
     serializer_class = PerDcompAnnotationSerializer
@@ -263,9 +269,8 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
             except PerDcomp.DoesNotExist:
                 queryset = queryset.none()
 
-        # Se não for admin, filtrar apenas anotações do usuário
-        if not IsAdminUser().has_permission(self.request, self):
-            queryset = queryset.filter(user_id=self.request.user.id)
+        # Usuários podem ver todas as anotações, mas só podem editar/deletar as próprias
+        # A permissão de edição/deleção é controlada pelo IsOwnerOrAdminForAnnotations
 
         return queryset
 
@@ -290,9 +295,8 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         description="""
         Cria uma nova anotação para um PER/DCOMP específico.
         
-        **Importante:** Cada usuário pode ter apenas UMA anotação por PER/DCOMP.
-        Se você já possui uma anotação para este PER/DCOMP, use PUT para atualizar
-        ou DELETE para remover a anotação existente antes de criar uma nova.
+        **Novo comportamento:** Usuários podem criar múltiplas anotações para o mesmo PER/DCOMP.
+        Cada POST criará uma nova anotação independente.
         
         O perdcomp_id deve ser fornecido na URL como parâmetro.
         O content deve ser um objeto JSON com a estrutura desejada.
@@ -343,34 +347,20 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
         data["entity_type"] = "perdcomp"
         data["entity_id"] = str(perdcomp_id)
 
-        # Usar o serializer que tem a lógica de upsert
+        # Usar o serializer normal para criação
         serializer = PerDcompAnnotationSerializer(
             data=data, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
+        annotation = serializer.save()
 
-        # Verificar se já existe anotação para este usuário e PER/DCOMP
-        user_id = request.user.id
-        existing_annotation = Annotation.objects.filter(
-            user_id=user_id,
-            content_type__app_label="perdcomps",
-            content_type__model="perdcomp",
-            object_id=perdcomp.id,
-            deleted_at__isnull=True,
-        ).first()
-
-        is_update = existing_annotation is not None
-        annotation = (
-            serializer.save()
-        )  # Aqui o serializer faz create ou update automaticamente
-
-        # Retornar resposta com status apropriado
+        # Retornar resposta de criação
         response_serializer = self.get_serializer(annotation)
         headers = self.get_success_headers(response_serializer.data)
 
-        status_code = status.HTTP_200_OK if is_update else status.HTTP_201_CREATED
-
-        return Response(response_serializer.data, status=status_code, headers=headers)
+        return Response(
+            response_serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        )
 
     @extend_schema(
         summary="Listar anotações do PER/DCOMP",

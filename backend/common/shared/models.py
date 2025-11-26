@@ -30,14 +30,7 @@ class Annotation(models.Model):
     class Meta:
         db_table = "common_annotations"
         ordering = ["-created_at"]
-        # Unique constraint: one annotation per user per entity
-        constraints = [
-            models.UniqueConstraint(
-                fields=["user_id", "content_type", "object_id"],
-                condition=models.Q(deleted_at__isnull=True),
-                name="unique_user_entity_annotation",
-            )
-        ]
+        # Removed unique constraint to allow multiple annotations per user per entity
         indexes = [
             models.Index(fields=["content_type", "object_id"]),
             models.Index(fields=["user_id"]),

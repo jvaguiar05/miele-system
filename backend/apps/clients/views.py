@@ -339,16 +339,17 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     ViewSet para gerenciamento de anotações de clientes.
 
     **Características importantes:**
-    - Cada usuário pode ter APENAS UMA anotação por cliente
+    - Cada usuário pode ter MÚLTIPLAS anotações por cliente
     - O campo 'content' é um objeto JSON que permite estruturas flexíveis
-    - POST sempre faz upsert (cria nova ou atualiza existente)
+    - Usuários podem ver todas as anotações de todos os usuários
+    - Usuários só podem editar/deletar suas próprias anotações
 
     **Endpoints:**
-    - POST /api/v1/clients/annotations/by-client/{client_id}/ - Criar/atualizar anotação para cliente
-    - GET /api/v1/clients/annotations/by-client/{client_id}/ - Listar anotações do cliente
-    - PUT /api/v1/clients/annotations/{annotation_id}/ - Atualizar anotação completa
-    - PATCH /api/v1/clients/annotations/{annotation_id}/ - Atualizar apenas campo 'text'
-    - DELETE /api/v1/clients/annotations/{annotation_id}/ - Excluir anotação
+    - POST /api/v1/clients/annotations/by-client/{client_id}/ - Criar nova anotação para cliente
+    - GET /api/v1/clients/annotations/by-client/{client_id}/ - Listar todas as anotações do cliente
+    - PUT /api/v1/clients/annotations/{annotation_id}/ - Atualizar anotação completa (apenas próprias)
+    - PATCH /api/v1/clients/annotations/{annotation_id}/ - Atualizar apenas campo 'text' (apenas próprias)
+    - DELETE /api/v1/clients/annotations/{annotation_id}/ - Excluir anotação (apenas próprias)
     """
 
     serializer_class = ClientAnnotationSerializer
@@ -364,7 +365,6 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filtrar anotações baseado no contexto da URL."""
         from django.contrib.contenttypes.models import ContentType
-        from common.permissions import IsAdminUser
 
         client_ct = ContentType.objects.get(app_label="clients", model="client")
         queryset = Annotation.objects.filter(
@@ -382,9 +382,8 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
             except Client.DoesNotExist:
                 queryset = queryset.none()
 
-        # Se não for admin, filtrar apenas anotações do usuário
-        if not IsAdminUser().has_permission(self.request, self):
-            queryset = queryset.filter(user_id=self.request.user.id)
+        # Usuários podem ver todas as anotações, mas só podem editar/deletar as próprias
+        # A permissão de edição/deleção é controlada pelo IsOwnerOrAdminForAnnotations
 
         return queryset
 
@@ -409,9 +408,8 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
         description="""
         Cria uma nova anotação para um cliente específico.
         
-        **Importante:** Cada usuário pode ter apenas UMA anotação por cliente.
-        Se você já possui uma anotação para este cliente, use PUT para atualizar
-        ou DELETE para remover a anotação existente antes de criar uma nova.
+        **Novo comportamento:** Usuários podem criar múltiplas anotações para o mesmo cliente.
+        Cada POST criará uma nova anotação independente.
         
         O client_id deve ser fornecido na URL como parâmetro.
         O content deve ser um objeto JSON com a estrutura desejada.
