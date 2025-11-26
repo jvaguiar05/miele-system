@@ -145,12 +145,8 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
     def perform_destroy(self, instance):
-        """Soft delete com data de exclusão."""
-        from django.utils import timezone
-
-        instance.deleted_at = timezone.now()
-        instance.is_active = False
-        instance.save()
+        """Soft delete com data de exclusão e endereço associado."""
+        instance.soft_delete()
 
     @extend_schema(
         summary="Criar cliente com endereço",

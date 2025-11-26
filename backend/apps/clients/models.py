@@ -30,7 +30,7 @@ class Address(models.Model):
     # Auditoria
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
-    deleted_at = models.DateTimeField(null=True, blank=True)
+    # Note: No deleted_at for Address - hard delete via CASCADE when client is deleted
 
     class Meta:
         db_table = "addresses"
@@ -178,7 +178,12 @@ class Client(models.Model):
         return f"{self.razao_social} ({self.cnpj})"
 
     def soft_delete(self):
-        """Exclusão lógica."""
+        """Exclusão lógica do cliente com exclusão física do endereço."""
+        # Hard delete do endereço (CASCADE automático)
+        if self.address:
+            self.address.delete()  # Exclusão física
+
+        # Soft delete do cliente
         self.deleted_at = timezone.now()
         self.is_active = False
         self.save()
@@ -187,4 +192,17 @@ class Client(models.Model):
         """Restaurar cliente excluído."""
         self.deleted_at = None
         self.is_active = True
+
+        # Criar novo endereço vazio se não existe
+        if not self.address:
+            self.address = Address.objects.create(
+                logradouro="",
+                numero="",
+                complemento="",
+                bairro="",
+                municipio="",
+                uf="",
+                cep="",
+            )
+
         self.save()

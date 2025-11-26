@@ -3,8 +3,10 @@ from django.contrib.admin import SimpleListFilter
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils import timezone
+from django.contrib import messages
 import json
 from .models import ApprovalRequest
+from .services import ApprovalService
 
 
 class StatusFilter(SimpleListFilter):
@@ -15,17 +17,17 @@ class StatusFilter(SimpleListFilter):
 
     def lookups(self, request, model_admin):
         return [
-            ("pending", "🟡 Pendentes (Ação Necessária)"),
-            ("approved", "✅ Aprovadas"),
-            ("rejected", "❌ Rejeitadas"),
+            ("pending", "🔴 Pendentes (Ação Necessária)"),
+            ("approved", "✅ Aprovadas (Executadas)"),
+            ("rejected", "❌ Rejeitadas (Executadas)"),
             ("all", "📋 Todas"),
         ]
 
     def queryset(self, request, queryset):
         if self.value() == "approved":
-            return queryset.filter(status="approved")
+            return queryset.filter(status="executed", was_approved=True)
         elif self.value() == "rejected":
-            return queryset.filter(status="rejected")
+            return queryset.filter(status="executed", was_approved=False)
         elif self.value() == "all":
             return queryset
         else:  # Default: show only pending requests
@@ -126,10 +128,19 @@ class ApprovalRequestAdmin(admin.ModelAdmin):
 
     readonly_fields = [
         "public_id",
+        "subject",
+        "action",
+        "reason",
+        "resource_type",
+        "resource_id",
+        "requested_by",
         "created_at",
         "updated_at",
+        "approved_at",
+        "executed_at",
         "get_payload_diff_display",
         "get_requester_full_info",
+        "get_approval_actions",
     ]
 
     # Force ordering by creation time (oldest first) - queue management
@@ -137,38 +148,58 @@ class ApprovalRequestAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (
-            "Informações da Solicitação",
+            "📋 Solicitação",
             {
-                "fields": ("public_id", "subject", "action", "status", "reason"),
+                "fields": ("public_id", "subject", "action", "reason"),
+                "classes": ("wide",),
             },
         ),
         (
-            "Recurso Afetado",
+            "🎯 Decisão (EDITAR AQUI)",
+            {
+                "fields": ("status", "was_approved", "approval_notes"),
+                "classes": ("wide", "collapse"),
+                "description": "Para APROVAR: Status=Executed + Was_approved=True. Para REJEITAR: Status=Executed + Was_approved=False.",
+            },
+        ),
+        (
+            "🔍 Detalhes do Recurso",
             {
                 "fields": (
                     "resource_type",
                     "resource_id",
                     "get_payload_diff_display",
                 ),
+                "classes": ("collapse",),
             },
         ),
         (
-            "Pessoas Envolvidas",
+            "👥 Pessoas Envolvidas",
             {
                 "fields": (
                     "get_requester_full_info",
-                    "reviewed_by",
-                    "review_notes",
+                    "approved_by",
                 ),
+                "classes": ("collapse",),
             },
         ),
         (
-            "Controle",
+            "⏰ Controle de Tempo",
             {
                 "fields": (
                     "created_at",
                     "updated_at",
+                    "approved_at",
+                    "executed_at",
                 ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "⚡ Ações Rápidas",
+            {
+                "fields": ("get_approval_actions",),
+                "classes": ("wide",),
             },
         ),
     )
@@ -177,12 +208,16 @@ class ApprovalRequestAdmin(admin.ModelAdmin):
 
     def get_status_display_badge(self, obj):
         """Display status with color-coded badges."""
-        badges = {
-            "pending": "🟡 Pendente",
-            "approved": "✅ Aprovada",
-            "rejected": "❌ Rejeitada",
-        }
-        return badges.get(obj.status, obj.status)
+        if obj.status == "pending":
+            return "🔴 Pendente"
+        elif obj.status == "executed":
+            if obj.was_approved:
+                return "✅ Aprovada"
+            else:
+                return "❌ Rejeitada"
+        elif obj.status == "cancelled":
+            return "🚫 Cancelada"
+        return obj.get_status_display()
 
     get_status_display_badge.short_description = "Status"
     get_status_display_badge.admin_order_field = "status"
@@ -289,17 +324,37 @@ class ApprovalRequestAdmin(admin.ModelAdmin):
         """Bulk action to approve selected requests."""
         pending_requests = queryset.filter(status="pending")
         count = pending_requests.count()
+        success_count = 0
+        error_count = 0
 
         for approval_request in pending_requests:
-            approval_request.status = "approved"
-            approval_request.reviewed_by = request.user
-            approval_request.reviewed_at = timezone.now()
-            approval_request.save()
+            try:
+                notes = f"Aprovação em lote via admin por {request.user.get_full_name() or request.user.username} em {timezone.now().strftime('%d/%m/%Y às %H:%M')}"
 
-            # Here you would call the actual approval logic
-            # approval_request.execute_approved_action()
+                # Use the new approve_and_execute method
+                approval_request.approve_and_execute(request.user, notes)
 
-        self.message_user(request, f"{count} solicitações foram aprovadas com sucesso.")
+                # Execute the changes
+                ApprovalService._execute_change(approval_request, request.user)
+
+                success_count += 1
+
+            except Exception as e:
+                error_count += 1
+                messages.error(
+                    request,
+                    f"❌ Erro ao aprovar solicitação {approval_request.subject}: {str(e)}",
+                )
+
+        if success_count > 0:
+            messages.success(
+                request,
+                f"✅ {success_count} solicitações foram aprovadas e executadas automaticamente!",
+            )
+        if error_count > 0:
+            messages.warning(
+                request, f"⚠️ {error_count} solicitações não puderam ser processadas."
+            )
 
     approve_requests.short_description = "✅ Aprovar solicitações selecionadas"
 
@@ -307,16 +362,170 @@ class ApprovalRequestAdmin(admin.ModelAdmin):
         """Bulk action to reject selected requests."""
         pending_requests = queryset.filter(status="pending")
         count = pending_requests.count()
+        success_count = 0
+        error_count = 0
 
         for approval_request in pending_requests:
-            approval_request.status = "rejected"
-            approval_request.reviewed_by = request.user
-            approval_request.reviewed_at = timezone.now()
-            approval_request.save()
+            try:
+                notes = f"Rejeição em lote via admin por {request.user.get_full_name() or request.user.username} em {timezone.now().strftime('%d/%m/%Y às %H:%M')}"
 
-        self.message_user(request, f"{count} solicitações foram rejeitadas.")
+                # Use the new reject_and_execute method
+                approval_request.reject_and_execute(request.user, notes)
+
+                # Handle user rejection if applicable
+                if (
+                    approval_request.resource_type == "identity.User"
+                    and approval_request.action == "activate"
+                ):
+                    try:
+                        from django.apps import apps
+
+                        app_label, model_name = approval_request.resource_type.split(
+                            "."
+                        )
+                        model_class = apps.get_model(app_label, model_name)
+                        user = model_class.objects.get(pk=approval_request.resource_id)
+
+                        user.approval_status = "declined"
+                        user.is_active = False
+                        user.save()
+
+                    except Exception:
+                        pass
+
+                success_count += 1
+
+            except Exception as e:
+                error_count += 1
+                messages.error(
+                    request,
+                    f"❌ Erro ao rejeitar solicitação {approval_request.subject}: {str(e)}",
+                )
+
+        if success_count > 0:
+            messages.success(
+                request, f"❌ {success_count} solicitações foram rejeitadas!"
+            )
+        if error_count > 0:
+            messages.warning(
+                request, f"⚠️ {error_count} solicitações não puderam ser processadas."
+            )
 
     reject_requests.short_description = "❌ Rejeitar solicitações selecionadas"
+
+    def get_approval_actions(self, obj):
+        """Show quick approval action buttons."""
+        if obj.status != "pending":
+            status_text = "✅ Aprovada" if obj.was_approved else "❌ Rejeitada"
+            return format_html(
+                f'<span style="color: #888;">🔒 Solicitação já processada: {status_text}</span>'
+            )
+
+        return format_html(
+            """<div style="display: flex; gap: 10px; align-items: center; flex-direction: column;">
+                <div>
+                    <strong>⚡ Ações Rápidas:</strong>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <span style="padding: 5px 10px; background: #e8f5e8; border: 1px solid #4CAF50; border-radius: 3px;">
+                        ✅ <strong>APROVAR:</strong> Status = "Executed" + Was approved = ✅
+                    </span>
+                    <span style="padding: 5px 10px; background: #ffe8e8; border: 1px solid #f44336; border-radius: 3px;">
+                        ❌ <strong>REJEITAR:</strong> Status = "Executed" + Was approved = ❌
+                    </span>
+                </div>
+            </div>
+            <div style="margin-top: 10px; padding: 8px; background: #f0f8ff; border-left: 4px solid #2196F3;">
+                💡 <strong>Dica:</strong> Use o campo "Approval notes" para adicionar observações sobre sua decisão.
+            </div>"""
+        )
+
+    get_approval_actions.short_description = "Ações de Aprovação"
+
+    def save_model(self, request, obj, form, change):
+        """Handle approval status changes with new simplified logic."""
+        if change:  # Only on updates, not creation
+            # Get the original object to compare status changes
+            try:
+                original = ApprovalRequest.objects.get(pk=obj.pk)
+                status_changed = original.status != obj.status
+                original_status = original.status
+            except ApprovalRequest.DoesNotExist:
+                status_changed = False
+                original_status = None
+
+            # Handle transition from pending to executed (approved/rejected)
+            if (
+                status_changed
+                and obj.status == "executed"
+                and original_status == "pending"
+            ):
+                try:
+                    # Check was_approved to determine if this is approval or rejection
+                    is_approval = obj.was_approved
+
+                    # Set approval metadata
+                    obj.approved_by = request.user
+                    obj.approved_at = timezone.now()
+                    obj.executed_at = timezone.now()
+
+                    # Add automatic note if none provided
+                    if not obj.approval_notes:
+                        action_text = "aprovada" if is_approval else "rejeitada"
+                        obj.approval_notes = f"Solicitação {action_text} via admin por {request.user.get_full_name() or request.user.username} em {timezone.now().strftime('%d/%m/%Y às %H:%M')}"
+
+                    # Save the approval request first
+                    super().save_model(request, obj, form, change)
+
+                    # Execute the changes if approved
+                    if is_approval:
+                        try:
+                            ApprovalService._execute_change(obj, request.user)
+                            messages.success(
+                                request,
+                                f"✅ Solicitação aprovada e executada com sucesso! As mudanças foram aplicadas ao {obj.resource_type}.",
+                            )
+                        except Exception as e:
+                            messages.error(
+                                request,
+                                f"❌ Erro na execução: {str(e)}. Solicitação foi marcada como aprovada mas não executada.",
+                            )
+                    else:  # rejected
+                        # Handle user activation rejection
+                        if (
+                            obj.resource_type == "identity.User"
+                            and obj.action == "activate"
+                        ):
+                            try:
+                                from django.apps import apps
+
+                                app_label, model_name = obj.resource_type.split(".")
+                                model_class = apps.get_model(app_label, model_name)
+                                user = model_class.objects.get(pk=obj.resource_id)
+
+                                user.approval_status = "declined"
+                                user.is_active = False
+                                user.save()
+
+                            except Exception:
+                                pass  # Ignore errors in rejection handling
+
+                        messages.success(
+                            request, "❌ Solicitação rejeitada com sucesso!"
+                        )
+
+                    return  # Don't call super() again
+
+                except Exception as e:
+                    messages.error(
+                        request, f"❌ Erro ao processar solicitação: {str(e)}"
+                    )
+                    # Revert status change on error
+                    obj.status = original_status
+                    super().save_model(request, obj, form, change)
+                    return
+
+        super().save_model(request, obj, form, change)
 
     def changelist_view(self, request, extra_context=None):
         """Add custom context to the change list view."""

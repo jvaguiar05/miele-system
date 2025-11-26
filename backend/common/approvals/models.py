@@ -17,8 +17,6 @@ class ApprovalRequest(models.Model):
 
     class ApprovalStatus(models.TextChoices):
         PENDING = "pending", "Pendente"
-        APPROVED = "approved", "Aprovado"
-        REJECTED = "rejected", "Rejeitado"
         EXECUTED = "executed", "Executado"
         CANCELLED = "cancelled", "Cancelado"
 
@@ -46,12 +44,8 @@ class ApprovalRequest(models.Model):
     )
     status = models.CharField(
         max_length=20,
-        choices=[
-            ("pending", "Pending"),
-            ("approved", "Approved"),
-            ("rejected", "Rejected"),
-        ],
-        default="pending",
+        choices=ApprovalStatus.choices,
+        default=ApprovalStatus.PENDING,
         help_text="Status da solicitação",
     )
 
@@ -69,6 +63,13 @@ class ApprovalRequest(models.Model):
 
     # Justificativa
     reason = models.TextField(help_text="Motivo da solicitação")
+
+    # Resultado da decisão (para requests executados)
+    was_approved = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="True se aprovado, False se rejeitado, None se ainda pendente",
+    )
 
     # Usuários envolvidos
     requested_by = models.ForeignKey(
@@ -128,39 +129,34 @@ class ApprovalRequest(models.Model):
 
     @property
     def is_approved(self):
-        """Verifica se a solicitação foi aprovada."""
-        return self.status in [
-            self.ApprovalStatus.APPROVED,
-            self.ApprovalStatus.EXECUTED,
-        ]
+        """Verifica se a solicitação foi aprovada (executada como aprovada)."""
+        return self.status == self.ApprovalStatus.EXECUTED and self.was_approved is True
 
     @property
     def can_be_executed(self):
         """Verifica se a solicitação pode ser executada."""
-        return self.status == self.ApprovalStatus.APPROVED
+        return self.status == self.ApprovalStatus.PENDING
 
-    def approve(self, approved_by_user, notes=""):
-        """Aprova a solicitação."""
-        self.status = self.ApprovalStatus.APPROVED
-        self.approved_by = approved_by_user
-        self.approved_at = timezone.now()
-        if notes:
-            self.approval_notes = notes
-        self.save()
-
-    def reject(self, approved_by_user, notes=""):
-        """Rejeita a solicitação."""
-        self.status = self.ApprovalStatus.REJECTED
-        self.approved_by = approved_by_user
-        self.approved_at = timezone.now()
-        if notes:
-            self.approval_notes = notes
-        self.save()
-
-    def mark_executed(self):
-        """Marca a solicitação como executada."""
+    def approve_and_execute(self, approved_by_user, notes=""):
+        """Aprova e marca como executada."""
+        self.was_approved = True
         self.status = self.ApprovalStatus.EXECUTED
+        self.approved_by = approved_by_user
+        self.approved_at = timezone.now()
         self.executed_at = timezone.now()
+        if notes:
+            self.approval_notes = notes
+        self.save()
+
+    def reject_and_execute(self, approved_by_user, notes=""):
+        """Rejeita e marca como executada."""
+        self.was_approved = False
+        self.status = self.ApprovalStatus.EXECUTED
+        self.approved_by = approved_by_user
+        self.approved_at = timezone.now()
+        self.executed_at = timezone.now()
+        if notes:
+            self.approval_notes = notes
         self.save()
 
     def cancel(self):

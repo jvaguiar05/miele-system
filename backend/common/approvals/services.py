@@ -56,13 +56,11 @@ class ApprovalService:
         if not approval_request.is_pending:
             return False
 
-        # Aprovar a solicitação
-        approval_request.approve(approved_by, notes)
-        # ApprovalRequest status changes are not logged since the ApprovalRequest serves as audit trail
-
-        # Executar a mudança
+        # Aprovar e executar a solicitação
         try:
             ApprovalService._execute_change(approval_request, approved_by)
+            # Mark as approved and executed after successful execution
+            approval_request.approve_and_execute(approved_by, notes)
             return True
         except Exception as e:
             # Execution failed - error info is stored in ApprovalRequest itself
@@ -79,7 +77,7 @@ class ApprovalService:
             return False
 
         # Rejeitar a solicitação
-        approval_request.reject(approved_by, notes)
+        approval_request.reject_and_execute(approved_by, notes)
 
         # Handle special rejection cases
         if (
@@ -252,10 +250,8 @@ class ApprovalService:
                             },
                         )
 
-            # Marcar solicitação como executada
-            approval_request.mark_executed()
-
             # ApprovalRequest execution is not logged since the ApprovalRequest serves as audit trail
+            # Note: The calling method should handle marking the request as executed
 
         except ObjectDoesNotExist:
             raise ValueError(
