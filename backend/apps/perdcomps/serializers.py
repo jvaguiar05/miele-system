@@ -86,14 +86,15 @@ class PerDcompAttachedFileSerializer(AttachedFileSerializer):
             attrs["entity_type"] = "perdcomp"
             attrs["entity_id"] = attrs.pop("perdcomp_id")
         return super().validate(attrs)
-        return super().validate(attrs)
 
 
 class PerDcompSerializer(serializers.ModelSerializer):
     """Serializer completo para PerDcomp."""
 
     id = serializers.UUIDField(source="public_id", read_only=True)
-    client_id = serializers.UUIDField(write_only=True)
+    client_cnpj = serializers.CharField(
+        write_only=True, help_text="CNPJ do cliente para vinculação"
+    )
     client_name = serializers.CharField(source="client.razao_social", read_only=True)
     created_by_name = serializers.CharField(
         source="created_by.username", read_only=True
@@ -123,7 +124,7 @@ class PerDcompSerializer(serializers.ModelSerializer):
         model = PerDcomp
         fields = [
             "id",
-            "client_id",
+            "client_cnpj",
             "client_name",
             "created_by_name",
             "cnpj",
@@ -160,31 +161,39 @@ class PerDcompSerializer(serializers.ModelSerializer):
             "pode_ser_cancelado",
         ]
 
-    def validate_client_id(self, value):
-        """Validar e converter client_id de UUID para int."""
+    def validate_client_cnpj(self, value):
+        """Validar e converter client_cnpj para client_id."""
         try:
             from apps.clients.models import Client
 
-            client = Client.objects.get(public_id=value, deleted_at__isnull=True)
-            return client.id  # Retorna o ID interno
+            # Remove any non-numeric characters from CNPJ for comparison
+            import re
+
+            clean_cnpj = re.sub(r"[^\d]", "", str(value))
+
+            # Try to find client by CNPJ (both original and cleaned versions)
+            client = None
+            try:
+                client = Client.objects.get(cnpj=value, deleted_at__isnull=True)
+            except Client.DoesNotExist:
+                client = Client.objects.get(cnpj=clean_cnpj, deleted_at__isnull=True)
+
+            return client
         except Client.DoesNotExist:
-            raise serializers.ValidationError("Cliente não encontrado.")
+            raise serializers.ValidationError(
+                f"Cliente com CNPJ '{value}' não encontrado."
+            )
 
     def create(self, validated_data):
         """Criar PerDcomp com created_by_id e cnpj automaticamente."""
-        # Buscar cliente para pegar o CNPJ
-        client_id = validated_data.get("client_id")
-        if client_id:
-            from apps.clients.models import Client
+        # Get client from validated client_cnpj
+        client = validated_data.pop("client_cnpj")
 
-            try:
-                client = Client.objects.get(id=client_id)
-                validated_data["cnpj"] = client.cnpj
-            except Client.DoesNotExist:
-                pass  # Será capturado pela validação
-
+        # Set the client_id and cnpj from the found client
+        validated_data["client_id"] = client.id
+        validated_data["cnpj"] = client.cnpj
         validated_data["created_by_id"] = self.context["request"].user.id
-        validated_data["client_id"] = validated_data.pop("client_id")
+
         return super().create(validated_data)
 
 
@@ -229,43 +238,3 @@ class PerDcompSensitiveSerializer(serializers.ModelSerializer):
             "status",
         ]
         read_only_fields = ["id"]
-
-
-class PerDcompBasicSerializer(serializers.ModelSerializer):
-    """Serializer básico para PerDcomp (listagem)."""
-
-    id = serializers.UUIDField(source="public_id", read_only=True)
-    client_name = serializers.CharField(source="client.razao_social", read_only=True)
-
-    class Meta:
-        model = PerDcomp
-        fields = [
-            "id",
-            "numero_perdcomp",
-            "tributo_pedido",
-            "status",
-            "client_name",
-            "valor_pedido",
-            "data_vencimento",
-            "created_at",
-        ]
-        read_only_fields = ["id", "client_name", "created_at"]
-
-
-class PerDcompSensitiveSerializer(serializers.ModelSerializer):
-    """Serializer para campos sensíveis (requer aprovação)."""
-
-    id = serializers.UUIDField(source="public_id", read_only=True)
-
-    class Meta:
-        model = PerDcomp
-        fields = [
-            "id",
-            "processo_protocolo",
-            "valor_pedido",
-            "valor_compensado",
-            "status",
-            "data_vencimento",
-            "data_transmissao",
-        ]
-        read_only_fields = ["id", "data_aprovacao"]
