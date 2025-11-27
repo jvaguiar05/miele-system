@@ -39,9 +39,9 @@ class PerDcomp(models.Model):
 
     # Identificação do processo
     numero = models.TextField(help_text="Número do documento")
-    numero_perdcomp = models.TextField(help_text="Número específico do PER/DCOMP")
-    processo_protocolo = models.BigIntegerField(
-        help_text="Número do protocolo do processo"
+    numero_perdcomp = models.TextField(null=True, blank=True, help_text="Número específico do PER/DCOMP")
+    processo_protocolo = models.TextField(
+        null=True, blank=True, help_text="Protocolo do processo (texto)"
     )
 
     # Datas importantes

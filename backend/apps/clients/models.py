@@ -72,38 +72,49 @@ class Client(models.Model):
     # Dados principais
     razao_social = models.CharField(max_length=255, help_text="Razão social do cliente")
     nome_fantasia = models.CharField(
-        max_length=255, blank=True, help_text="Nome fantasia do cliente"
+        max_length=255, null=True, blank=True, help_text="Nome fantasia do cliente"
     )
     cnpj = models.CharField(max_length=18, unique=True, help_text="CNPJ do cliente")
-    inscricao_estadual = models.TextField(blank=True, help_text="Inscrição estadual")
-    inscricao_municipal = models.TextField(blank=True, help_text="Inscrição municipal")
+    inscricao_estadual = models.TextField(
+        null=True, blank=True, help_text="Inscrição estadual"
+    )
+    inscricao_municipal = models.TextField(
+        null=True, blank=True, help_text="Inscrição municipal"
+    )
     tipo_empresa = models.TextField(blank=True, help_text="Tipo da empresa")
     recuperacao_judicial = models.BooleanField(
         default=False, help_text="Em recuperação judicial"
     )
 
     # Contatos comerciais
-    telefone_comercial = models.TextField(blank=True, help_text="Telefone comercial")
-    email_comercial = models.CharField(
-        max_length=255, blank=True, help_text="Email comercial"
+    telefone_comercial = models.TextField(
+        null=True, blank=True, help_text="Telefone comercial"
     )
-    website = models.TextField(blank=True, help_text="Website da empresa")
+    email_comercial = models.CharField(
+        max_length=255, null=True, blank=True, help_text="Email comercial"
+    )
+    website = models.TextField(null=True, blank=True, help_text="Website da empresa")
 
     # Contatos diretos
-    telefone_contato = models.TextField(blank=True, help_text="Telefone de contato")
-    email_contato = models.TextField(blank=True, help_text="Email de contato")
+    telefone_contato = models.TextField(
+        null=True, blank=True, help_text="Telefone de contato"
+    )
+    email_contato = models.TextField(
+        null=True, blank=True, help_text="Email de contato"
+    )
 
     # Dados societários e estruturais
     quadro_societario = models.JSONField(
         default=list,
+        null=True,
         blank=True,
         help_text="Quadro societário - lista com nome e cargo de cada sócio: [{'nome': 'Nome do Sócio', 'cargo': 'Cargo/Função'}]",
     )
     responsavel_financeiro = models.TextField(
-        blank=True, help_text="Responsável financeiro"
+        null=True, blank=True, help_text="Responsável financeiro"
     )
     contador_responsavel = models.TextField(
-        blank=True, help_text="Contador responsável"
+        null=True, blank=True, help_text="Contador responsável"
     )
 
     # Dados fiscais
@@ -115,18 +126,23 @@ class Client(models.Model):
     regime_tributacao = models.CharField(
         max_length=20,
         choices=RegimeTributacao.choices,
+        null=True,
         blank=True,
         help_text="Regime de tributação",
     )
 
     # Documentos e contratos
-    contrato_social = models.TextField(blank=True, help_text="Dados do contrato social")
+    contrato_social = models.TextField(
+        null=True, blank=True, help_text="Dados do contrato social"
+    )
     ultima_alteracao_contratual = models.DateTimeField(
         null=True, blank=True, help_text="Data da última alteração contratual"
     )
-    rg_cpf_socios = models.TextField(blank=True, help_text="RG/CPF dos sócios")
+    rg_cpf_socios = models.TextField(
+        null=True, blank=True, help_text="RG/CPF dos sócios"
+    )
     certificado_digital = models.TextField(
-        blank=True, help_text="Informações do certificado digital"
+        null=True, blank=True, help_text="Informações do certificado digital"
     )
 
     # Controles

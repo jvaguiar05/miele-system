@@ -1,4 +1,4 @@
-.PHONY: run migrate makemigrations superuser test fmt lint compile install up down logs shell dbshell check collectstatic seed setup_database
+.PHONY: run migrate makemigrations superuser test fmt lint compile install up down logs shell dbshell check collectstatic seed setup_database import-excel import-clients import-perdcomps import-dry import-quiet
 
 # Variáveis úteis
 host ?= 127.0.0.1
@@ -6,6 +6,7 @@ port ?= 8000
 app ?=
 email ?=
 username ?=
+file ?= MieleData.xlsx
 
 # ---- Dev / Django ----
 
@@ -55,6 +56,37 @@ setup_database:
 		--last-name Admin \
 		--password mieleadminadmin
 	cd backend && python manage.py setup_test_user
+
+# ---- Data Import ----
+
+import-excel:
+	cd backend && python manage.py import_excel_data --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+import-clients:
+	cd backend && python manage.py import_excel_data --skip-perdcomps --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+import-perdcomps:
+	cd backend && python manage.py import_excel_data --skip-clients --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+import-dry:
+	cd backend && python manage.py import_excel_data --dry-run --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+import-quiet:
+	cd backend && python manage.py import_excel_data --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+import-clients-quiet:
+	cd backend && python manage.py import_excel_data --skip-perdcomps --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+import-perdcomps-quiet:
+	cd backend && python manage.py import_excel_data --skip-clients --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+# ---- Data Analysis ----
+
+find-duplicates:
+	cd backend && python manage.py find_duplicate_perdcomps --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+
+find-duplicates-quiet:
+	cd backend && python manage.py find_duplicate_perdcomps --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
 
 # ---- Quality ----
 
