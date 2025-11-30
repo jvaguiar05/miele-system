@@ -10,4 +10,5 @@ urlpatterns = [
     path("admin/", include("apps.identity.urls.admin")),
     path("clients/", include("apps.clients.urls")),
     path("perdcomps/", include("apps.perdcomps.urls")),
+    path("dashboard/", include("apps.clients.urls_dashboard")),
 ]

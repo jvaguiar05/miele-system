@@ -8,6 +8,8 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from drf_spectacular.utils import extend_schema
 from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
 from django.db import models
+from django.db.models import Sum, Count, Q
+from decimal import Decimal, InvalidOperation
 
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
@@ -78,6 +80,132 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         """Filtrar por entidades ativas."""
         return PerDcomp.objects.filter(deleted_at__isnull=True)
+
+    @extend_schema(
+        tags=["PER/DCOMPs"],
+        summary="Listar PER/DCOMPs com estatísticas",
+        description="""Lista PER/DCOMPs com paginação e estatísticas calculadas baseadas nos filtros aplicados.
+        
+        **Estatísticas retornadas:**
+        - total: Número total de PER/DCOMPs que correspondem aos filtros
+        - pendentes: Quantidade com status pendente (RASCUNHO, TRANSMITIDO, EM_PROCESSAMENTO)
+        - deferidos: Quantidade com status finalizado (DEFERIDO, INDEFERIDO, PARCIALMENTE_DEFERIDO, CANCELADO, VENCIDO)
+        - valor_total: Soma dos valores pedidos de todas as PER/DCOMPs filtradas
+        
+        **Filtros disponíveis:**
+        - Por status: ?status=TRANSMITIDO
+        - Por ativo: ?is_active=true
+        - Por tributo: ?tributo_pedido=COFINS
+        - Busca textual: ?search=numero_perdcomp OU cnpj OU tributo
+        
+        **Exemplos de busca:**
+        - Por número: ?search=123/45
+        - Por CNPJ: ?search=12.345.678/0001-90
+        - Por tributo: ?search=COFINS
+        """,
+        responses={
+            200: OpenApiResponse(
+                description="Lista de PER/DCOMPs com estatísticas",
+                examples=[
+                    OpenApiExample(
+                        "Resposta com estatísticas",
+                        value={
+                            "count": 50,
+                            "next": "http://api/perdcomps/?page=2",
+                            "previous": None,
+                            "results": [
+                                {
+                                    "id": "uuid",
+                                    "numero_perdcomp": "123/45",
+                                    "cnpj": "12.345.678/0001-90",
+                                    "client_name": "EMPRESA LTDA",
+                                    "status": "TRANSMITIDO",
+                                    "valor_pedido": "1500.00",
+                                    "data_vencimento": "2025-12-31T00:00:00Z",
+                                }
+                            ],
+                            "statistics": {
+                                "total": 50,
+                                "pendentes": 30,
+                                "deferidos": 20,
+                                "valor_total": "75000.00",
+                            },
+                        },
+                    )
+                ],
+            )
+        },
+    )
+    def list(self, request, *args, **kwargs):
+        """List PerDcomps with statistics based on applied filters."""
+        # Get the filtered queryset (same filters applied to pagination)
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Calculate statistics based on the filtered data
+        stats = self.calculate_statistics(queryset)
+
+        # Get paginated results
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            # Add statistics to paginated response
+            response = self.get_paginated_response(serializer.data)
+            response.data["statistics"] = stats
+            return response
+
+        # If no pagination, add statistics to normal response
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(
+            {
+                "results": serializer.data,
+                "count": len(serializer.data),
+                "statistics": stats,
+            }
+        )
+
+    def calculate_statistics(self, queryset):
+        """Calculate statistics for the filtered queryset."""
+        # Total count (already available in pagination)
+        total = queryset.count()
+
+        # Pending status counts
+        pending_statuses = [
+            PerDcomp.Status.RASCUNHO,
+            PerDcomp.Status.TRANSMITIDO,
+            PerDcomp.Status.EM_PROCESSAMENTO,
+        ]
+        pendentes = queryset.filter(status__in=pending_statuses).count()
+
+        # Finished/completed status counts (deferido, parcialmente deferido, indeferido)
+        finished_statuses = [
+            PerDcomp.Status.DEFERIDO,
+            PerDcomp.Status.INDEFERIDO,
+            PerDcomp.Status.PARCIALMENTE_DEFERIDO,
+            PerDcomp.Status.CANCELADO,
+            PerDcomp.Status.VENCIDO,
+        ]
+        deferidos = queryset.filter(status__in=finished_statuses).count()
+
+        # Calculate total value (sum of valor_pedido)
+        # Convert varchar money fields to decimal for calculation
+        valor_total = Decimal("0.00")
+
+        for perdcomp in queryset.only("valor_pedido"):
+            try:
+                # Clean and convert the money string to decimal
+                valor_str = str(perdcomp.valor_pedido or "0.00").replace(",", ".")
+                valor_decimal = Decimal(valor_str)
+                valor_total += valor_decimal
+            except (ValueError, InvalidOperation):
+                # If conversion fails, treat as 0
+                continue
+
+        return {
+            "total": total,
+            "pendentes": pendentes,
+            "deferidos": deferidos,
+            "valor_total": f"{valor_total:.2f}",
+        }
 
     def get_object(self):
         """Buscar objeto por public_id."""
