@@ -36,7 +36,7 @@ class AuditService:
         """
         # Obter informações do contexto se não fornecidas
         if user is None:
-            user = get_current_user()
+            user = AuditService._get_current_user()
 
         correlation_id = get_correlation_id()
         # Se não houver correlation_id no contexto, gerar um novo (para comandos Django)
@@ -51,6 +51,18 @@ class AuditService:
         final_metadata = metadata or {}
         if request_metadata:
             final_metadata.update(request_metadata)
+
+        # Adicionar informações de debug sobre o usuário
+        if user:
+            final_metadata.update(
+                {
+                    "user_id": user.id,
+                    "username": getattr(user, "username", str(user)),
+                    "user_source": "context" if get_current_user() else "parameter",
+                }
+            )
+        else:
+            final_metadata["user_source"] = "none_found"
 
         # Obter ContentType do objeto
         content_type = ContentType.objects.get_for_model(content_object)
@@ -178,6 +190,43 @@ class AuditService:
                 return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
         else:
             return {"value": str(obj)}
+
+    @staticmethod
+    def _get_current_user():
+        """
+        Tenta obter o usuário atual de múltiplas fontes.
+        """
+        # Primeiro, tentar do contexto de auditoria
+        user = get_current_user()
+        if user:
+            return user
+
+        # Se não conseguir do contexto, tentar o thread-local do middleware
+        try:
+            from core.middleware import get_current_request
+
+            request = get_current_request()
+            if request and hasattr(request, "user") and request.user.is_authenticated:
+                return request.user
+        except Exception:
+            pass
+
+        # Se não conseguir do contexto, tentar do thread local do Django
+        try:
+            import threading
+
+            # Tentar acessar o request atual via thread local (usado por alguns middlewares)
+            current_request = getattr(threading.current_thread(), "request", None)
+            if (
+                current_request
+                and hasattr(current_request, "user")
+                and current_request.user.is_authenticated
+            ):
+                return current_request.user
+        except:
+            pass
+
+        return None
 
     @staticmethod
     def _filter_relevant_data(data: Dict) -> Dict:

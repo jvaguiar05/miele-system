@@ -1,5 +1,6 @@
 import uuid
 import json
+import threading
 from django.core.cache import cache
 from django.utils.deprecation import MiddlewareMixin
 from common.audit.context import (
@@ -9,13 +10,20 @@ from common.audit.context import (
     clear_context,
 )
 
+# Thread-local storage para o request atual
+_thread_local = threading.local()
+
 
 class CorrelationIdMiddleware(MiddlewareMixin):
     """
     Middleware para gerenciar correlation_id e contexto de auditoria.
+    Posicionado logo após AuthenticationMiddleware para capturar usuários JWT corretamente.
     """
 
     def process_request(self, request):
+        # Armazenar request no thread-local para acesso pelos signals
+        _thread_local.request = request
+
         # Gerar ou obter correlation_id
         correlation_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
         request.request_id = correlation_id
@@ -23,11 +31,7 @@ class CorrelationIdMiddleware(MiddlewareMixin):
         # Configurar contexto de auditoria
         set_correlation_id(correlation_id)
 
-        # Configurar usuário se autenticado
-        if hasattr(request, "user") and request.user.is_authenticated:
-            set_current_user(request.user)
-
-        # Configurar metadados do request
+        # Configurar metadados do request (sem usuário ainda)
         metadata = {
             "ip_address": self._get_client_ip(request),
             "user_agent": request.META.get("HTTP_USER_AGENT", ""),
@@ -36,19 +40,37 @@ class CorrelationIdMiddleware(MiddlewareMixin):
         }
         set_request_metadata(metadata)
 
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        """
+        Executado após o roteamento de URL, onde a autenticação JWT já foi processada.
+        Este é o momento ideal para capturar o usuário autenticado via JWT.
+        """
+        # Atualizar request no thread-local (pode ter mudado após auth)
+        _thread_local.request = request
+
+        # Configurar usuário se autenticado (incluindo JWT)
+        if hasattr(request, "user") and request.user.is_authenticated:
+            set_current_user(request.user)
+
+        return None  # Continue o processamento normal
+
     def process_response(self, request, response):
         rid = getattr(request, "request_id", None)
         if rid:
             response["X-Request-Id"] = rid
 
-        # Limpar contexto ao final do request
+        # Limpar contexto e thread-local ao final do request
         clear_context()
+        if hasattr(_thread_local, "request"):
+            delattr(_thread_local, "request")
 
         return response
 
     def process_exception(self, request, exception):
-        # Limpar contexto em caso de exceção
+        # Limpar contexto e thread-local em caso de exceção
         clear_context()
+        if hasattr(_thread_local, "request"):
+            delattr(_thread_local, "request")
         return None
 
     def _get_client_ip(self, request):
@@ -59,6 +81,11 @@ class CorrelationIdMiddleware(MiddlewareMixin):
         else:
             ip = request.META.get("REMOTE_ADDR")
         return ip
+
+
+def get_current_request():
+    """Função auxiliar para obter o request atual do thread-local."""
+    return getattr(_thread_local, "request", None)
 
 
 class FailedLoginTrackingMiddleware(MiddlewareMixin):
