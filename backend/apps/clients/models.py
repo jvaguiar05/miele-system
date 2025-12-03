@@ -11,9 +11,6 @@ class Address(models.Model):
     Modelo para endereços.
     """
 
-    # Flag para auditoria automática
-    __audit__ = True
-
     # Chave primária interna (int) para performance em FK
     id = models.BigAutoField(primary_key=True)
     # ID público (UUID) para exposição segura

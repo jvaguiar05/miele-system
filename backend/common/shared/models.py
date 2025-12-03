@@ -8,6 +8,9 @@ import uuid
 class Annotation(models.Model):
     """Modelo compartilhado para anotações de qualquer entidade."""
 
+    # Não auditar anotações (são apenas agregados)
+    __audit__ = False
+
     id = models.BigAutoField(primary_key=True)
     public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
@@ -59,6 +62,9 @@ class Annotation(models.Model):
 
 class AttachedFile(models.Model):
     """Modelo compartilhado para arquivos anexados a qualquer entidade."""
+
+    # Não auditar arquivos anexos (são apenas agregados)
+    __audit__ = False
 
     id = models.BigAutoField(primary_key=True)
     public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
