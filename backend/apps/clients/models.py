@@ -151,7 +151,7 @@ class Client(models.Model):
     client_status = models.CharField(
         max_length=20,
         choices=ClientStatus.choices,
-        default=ClientStatus.PENDING,
+        default=ClientStatus.ACTIVE,
         null=True,
         blank=True,
         help_text="Status do cliente",

@@ -9,8 +9,8 @@ import uuid
 
 # Define your models here
 class User(AbstractUser, AuditableMixin):
-    # Flag para auditoria automática
-    __audit__ = True
+    # Flag para auditoria automática - TEMPORARIAMENTE DESABILITADA
+    __audit__ = False
 
     class ApprovalStatus(models.TextChoices):
         PENDING = "pending", _("Pending")
