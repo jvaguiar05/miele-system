@@ -39,17 +39,23 @@ class PerDcomp(models.Model):
 
     # Identificação do processo
     numero = models.TextField(help_text="Número do documento")
-    numero_perdcomp = models.TextField(null=True, blank=True, help_text="Número específico do PER/DCOMP")
+    numero_perdcomp = models.TextField(
+        null=True, blank=True, help_text="Número específico do PER/DCOMP"
+    )
     processo_protocolo = models.TextField(
         null=True, blank=True, help_text="Protocolo do processo (texto)"
     )
 
     # Datas importantes
-    data_transmissao = models.DateTimeField(
-        null=True, blank=True, help_text="Data e hora da transmissão"
+    data_transmissao = models.DateField(
+        null=True, blank=True, help_text="Data da transmissão"
     )
-    data_vencimento = models.DateTimeField(help_text="Data e hora do vencimento")
-    data_competencia = models.DateTimeField(help_text="Data da competência")
+    data_vencimento = models.DateField(
+        null=True, blank=True, help_text="Data do vencimento"
+    )
+    data_competencia = models.DateField(
+        null=True, blank=True, help_text="Data da competência"
+    )
 
     # Dados fiscais
     tributo_pedido = models.TextField(help_text="Tributo do pedido")
@@ -130,7 +136,7 @@ class PerDcomp(models.Model):
     def esta_vencido(self):
         """Verificar se está vencido."""
         if self.data_vencimento:
-            return timezone.now() > self.data_vencimento
+            return timezone.now().date() > self.data_vencimento
         return False
 
     @property

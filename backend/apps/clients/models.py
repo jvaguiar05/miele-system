@@ -132,7 +132,7 @@ class Client(models.Model):
     contrato_social = models.TextField(
         null=True, blank=True, help_text="Dados do contrato social"
     )
-    ultima_alteracao_contratual = models.DateTimeField(
+    ultima_alteracao_contratual = models.DateField(
         null=True, blank=True, help_text="Data da última alteração contratual"
     )
     rg_cpf_socios = models.TextField(

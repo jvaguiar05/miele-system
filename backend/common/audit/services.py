@@ -1,7 +1,11 @@
 import json
+import re
 from typing import Any, Dict, Optional
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
+from django.utils.dateparse import parse_datetime, parse_date
+from datetime import datetime, date, time
+from decimal import Decimal, InvalidOperation
 from .models import AuditLog
 from .context import get_correlation_id, get_current_user, get_request_metadata
 
@@ -108,13 +112,13 @@ class AuditService:
         new_data = AuditService._filter_relevant_data(new_data)
         old_data = AuditService._filter_relevant_data(old_data)
 
-        # Filter to only include changed fields
+        # Filter to only include changed fields with smart comparison
         old_data_filtered = {}
         new_data_filtered = {}
 
         for field, new_value in new_data.items():
             old_value = old_data.get(field)
-            if old_value != new_value:
+            if AuditService._values_are_different(field, old_value, new_value):
                 old_data_filtered[field] = old_value
                 new_data_filtered[field] = new_value
 
@@ -125,6 +129,140 @@ class AuditService:
             new_data=new_data_filtered,
             user=user,
             metadata=metadata,
+        )
+
+    @staticmethod
+    def _values_are_different(field_name: str, old_value: Any, new_value: Any) -> bool:
+        """
+        Compara dois valores de forma inteligente, considerando tipos especiais.
+
+        Args:
+            field_name: Nome do campo (usado para heurísticas específicas)
+            old_value: Valor antigo
+            new_value: Valor novo
+
+        Returns:
+            True se os valores são diferentes, False caso contrário
+        """
+        # Se os valores são exatamente iguais
+        if old_value == new_value:
+            return False
+
+        # Se um é None e outro não, são diferentes
+        if (old_value is None) != (new_value is None):
+            return True
+
+        # Se ambos são None, são iguais
+        if old_value is None and new_value is None:
+            return False
+
+        # Normalizar e comparar datas/datetimes
+        if AuditService._is_date_like_value(
+            old_value
+        ) or AuditService._is_date_like_value(new_value):
+            return AuditService._compare_date_values(old_value, new_value)
+
+        # Comparar strings (remove espaços extras)
+        if isinstance(old_value, str) and isinstance(new_value, str):
+            return old_value.strip() != new_value.strip()
+
+        # Comparar números (pode incluir diferentes tipos: int, float, Decimal)
+        if isinstance(old_value, (int, float, Decimal)) and isinstance(
+            new_value, (int, float, Decimal)
+        ):
+            try:
+                return Decimal(str(old_value)) != Decimal(str(new_value))
+            except (ValueError, InvalidOperation):
+                pass
+
+        # Fallback: comparação direta
+        return old_value != new_value
+
+    @staticmethod
+    def _is_date_like_value(value: Any) -> bool:
+        """Verifica se um valor parece ser uma data."""
+        if isinstance(value, (date, datetime)):
+            return True
+        if isinstance(value, str):
+            # Verifica se a string está no formato ISO de data
+            return bool(re.match(r"\d{4}-\d{2}-\d{2}", value))
+        return False
+
+    @staticmethod
+    def _compare_date_values(old_value: Any, new_value: Any) -> bool:
+        """
+        Compara valores de data/datetime de forma normalizada.
+
+        Returns:
+            True se são diferentes, False se são iguais
+        """
+
+        def normalize_date_value(value):
+            if value is None:
+                return None
+            if isinstance(value, datetime):
+                # Converter para date se não tem tempo significativo
+                if value.time() == time.min:
+                    return value.date()
+                return value.replace(microsecond=0)  # Remove microsegundos
+            if isinstance(value, date):
+                return value
+            if isinstance(value, str):
+                try:
+                    # Tentar parsear como datetime primeiro
+                    if "T" in value or " " in value:
+                        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        # Se o tempo é midnight, converter para date
+                        if parsed.time() == time.min:
+                            return parsed.date()
+                        return parsed.replace(microsecond=0)
+                    else:
+                        # Parsear como date
+                        return datetime.strptime(value[:10], "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    pass
+            return value
+
+        normalized_old = normalize_date_value(old_value)
+        normalized_new = normalize_date_value(new_value)
+
+        return normalized_old != normalized_new
+
+    @staticmethod
+    def log_action(
+        action: str,
+        content_object: Any,
+        old_data: Optional[Dict] = None,
+        new_data: Optional[Dict] = None,
+        user=None,
+        metadata: Optional[Dict] = None,
+    ) -> AuditLog:
+        """Método central para registrar ações de auditoria."""
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = ContentType.objects.get_for_model(content_object)
+
+        # Obter o usuário do contexto se não fornecido
+        if user is None:
+            user = get_current_user()
+
+        correlation_id = get_correlation_id()
+
+        # Se correlation_id é None, gerar um UUID
+        if correlation_id is None:
+            import uuid
+
+            correlation_id = str(uuid.uuid4())
+
+        return AuditLog.objects.create(
+            action=action,
+            content_type=content_type,
+            object_id=content_object.pk,
+            old_data=old_data or {},
+            new_data=new_data or {},
+            user=user,
+            correlation_id=correlation_id,
+            metadata=metadata or {},
         )
 
     @staticmethod
@@ -235,14 +373,20 @@ class AuditService:
         Remove campos com valores None, vazios ou irrelevantes.
         """
         filtered = {}
-        irrelevant_fields = ["password", "_state"]
+        # Campos que devem ser sempre ignorados nos logs de auditoria
+        irrelevant_fields = [
+            "password", 
+            "_state", 
+            "updated_at",  # Campo de timestamp automático
+            "last_login",   # Campo de controle interno
+        ]
 
         for key, value in data.items():
             # Skip irrelevant fields
             if key in irrelevant_fields:
                 continue
             # Skip None values for certain fields
-            if value is None and key in ["last_login", "date_joined"]:
+            if value is None and key in ["date_joined"]:
                 continue
             # Include all other fields
             filtered[key] = value

@@ -90,7 +90,9 @@ def audit_post_save(sender, instance, created, **kwargs):
                 for field, new_value in new_data.items():
                     if field not in exempt_fields:
                         old_value = old_data.get(field)
-                        if old_value != new_value:
+                        if AuditService._values_are_different(
+                            field, old_value, new_value
+                        ):
                             significant_changes = True
                             break
 
