@@ -1,6 +1,7 @@
 from django.db.models import Count, Q
 from django.utils import timezone
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -21,12 +22,11 @@ def dashboard_stats(request):
         current_month_start = now.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        current_year_start = now.replace(
-            month=1, day=1, hour=0, minute=0, second=0, microsecond=0
-        )
 
-        # Last 6 months for charts
-        six_months_ago = now - timedelta(days=180)
+        # Calcular os últimos 6 meses dinamicamente incluindo o mês atual
+        six_months_ago = now - relativedelta(
+            months=5
+        )  # 5 meses atrás + mês atual = 6 meses
         six_months_start = six_months_ago.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
@@ -43,11 +43,12 @@ def dashboard_stats(request):
         ).count()
 
         # 2. PerDcomps with vencimento this month
+        next_month_start = current_month_start + relativedelta(months=1)
         perdcomps_vencimento_this_month = PerDcomp.objects.filter(
             is_active=True,
             deleted_at__isnull=True,
             data_vencimento__gte=current_month_start,
-            data_vencimento__lt=current_month_start + timedelta(days=32),  # Next month
+            data_vencimento__lt=next_month_start,
         ).count()
 
         # 3. Total PerDcomps and new ones this month
@@ -59,12 +60,10 @@ def dashboard_stats(request):
             is_active=True, deleted_at__isnull=True, created_at__gte=current_month_start
         ).count()
 
-        # 4. Taxa de Aprovação (PerDcomps this year with positive status)
-        perdcomps_this_year = PerDcomp.objects.filter(
-            is_active=True, deleted_at__isnull=True, created_at__gte=current_year_start
-        )
+        # 4. Taxa de Aprovação (todas as PerDcomps do sistema, não apenas do ano)
+        all_perdcomps = PerDcomp.objects.filter(is_active=True, deleted_at__isnull=True)
 
-        total_perdcomps_this_year = perdcomps_this_year.count()
+        total_all_perdcomps = all_perdcomps.count()
 
         # Define positive/finished statuses
         positive_statuses = [
@@ -73,31 +72,29 @@ def dashboard_stats(request):
             PerDcomp.Status.PARCIALMENTE_DEFERIDO,
         ]
 
-        perdcomps_with_positive_status = perdcomps_this_year.filter(
+        perdcomps_with_positive_status = all_perdcomps.filter(
             status__in=positive_statuses
         ).count()
 
         # Calculate approval rate
         approval_rate = 0
-        if total_perdcomps_this_year > 0:
+        if total_all_perdcomps > 0:
             approval_rate = round(
-                (perdcomps_with_positive_status / total_perdcomps_this_year) * 100, 1
+                (perdcomps_with_positive_status / total_all_perdcomps) * 100, 1
             )
 
         # === CHARTS DATA ===
 
-        # 1. Clients registered in last 6 months (month by month)
+        # 1. Clients registered in last 6 months (month by month) - dinâmico
         clients_by_month = []
-        current_date = six_months_start
 
         for i in range(6):
-            month_start = current_date
-            if current_date.month == 12:
-                month_end = current_date.replace(
-                    year=current_date.year + 1, month=1, day=1
-                )
-            else:
-                month_end = current_date.replace(month=current_date.month + 1, day=1)
+            # Calcular o mês dinamicamente (5 meses atrás até o mês atual)
+            month_date = now - relativedelta(months=5 - i)
+            month_start = month_date.replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            )
+            month_end = month_start + relativedelta(months=1)
 
             clients_count = Client.objects.filter(
                 is_active=True,
@@ -124,30 +121,22 @@ def dashboard_stats(request):
 
             clients_by_month.append(
                 {
-                    "month": month_names[current_date.month],
-                    "year": current_date.year,
+                    "month": month_names[month_start.month],
+                    "year": month_start.year,
                     "count": clients_count,
                 }
             )
 
-            # Move to next month
-            if current_date.month == 12:
-                current_date = current_date.replace(year=current_date.year + 1, month=1)
-            else:
-                current_date = current_date.replace(month=current_date.month + 1)
-
-        # 2. PerDcomps registered in last 6 months (month by month)
+        # 2. PerDcomps registered in last 6 months (month by month) - dinâmico
         perdcomps_by_month = []
-        current_date = six_months_start
 
         for i in range(6):
-            month_start = current_date
-            if current_date.month == 12:
-                month_end = current_date.replace(
-                    year=current_date.year + 1, month=1, day=1
-                )
-            else:
-                month_end = current_date.replace(month=current_date.month + 1, day=1)
+            # Calcular o mês dinamicamente (5 meses atrás até o mês atual)
+            month_date = now - relativedelta(months=5 - i)
+            month_start = month_date.replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            )
+            month_end = month_start + relativedelta(months=1)
 
             perdcomps_count = PerDcomp.objects.filter(
                 is_active=True,
@@ -173,24 +162,24 @@ def dashboard_stats(request):
 
             perdcomps_by_month.append(
                 {
-                    "month": month_names[current_date.month],
-                    "year": current_date.year,
+                    "month": month_names[month_start.month],
+                    "year": month_start.year,
                     "count": perdcomps_count,
                 }
             )
 
-            # Move to next month
-            if current_date.month == 12:
-                current_date = current_date.replace(year=current_date.year + 1, month=1)
-            else:
-                current_date = current_date.replace(month=current_date.month + 1)
+        # 3. Status distribution for PerDcomps dos últimos 6 meses (não do ano todo)
+        perdcomps_last_6_months = PerDcomp.objects.filter(
+            is_active=True,
+            deleted_at__isnull=True,
+            created_at__gte=six_months_start,
+        )
 
-        # 3. Status distribution for PerDcomps this year
-        perdcomps_deferido = perdcomps_this_year.filter(
+        perdcomps_deferido = perdcomps_last_6_months.filter(
             status=PerDcomp.Status.DEFERIDO
         ).count()
 
-        perdcomps_indeferido = perdcomps_this_year.filter(
+        perdcomps_indeferido = perdcomps_last_6_months.filter(
             status=PerDcomp.Status.INDEFERIDO
         ).count()
 
@@ -201,7 +190,7 @@ def dashboard_stats(request):
             PerDcomp.Status.EM_PROCESSAMENTO,
         ]
 
-        perdcomps_em_analise = perdcomps_this_year.filter(
+        perdcomps_em_analise = perdcomps_last_6_months.filter(
             status__in=processing_statuses
         ).count()
 
@@ -222,7 +211,7 @@ def dashboard_stats(request):
                 "approval_rate": {
                     "rate_percentage": approval_rate,
                     "approved_count": perdcomps_with_positive_status,
-                    "total_count": total_perdcomps_this_year,
+                    "total_count": total_all_perdcomps,  # Agora usando todas as perdcomps
                 },
             },
             "charts": {
