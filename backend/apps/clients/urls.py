@@ -8,13 +8,46 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r"clients", ClientViewSet, basename="client")
-# Remove the old annotations route since we'll use a custom path pattern
-router.register(
-    r"attached-files", ClientAttachedFileViewSet, basename="clientattachedfile"
-)
 
-# Custom path for annotations with client_id as parameter
+# Custom paths for nested resources
 urlpatterns = [
+    # Nested attached files routes
+    path(
+        "clients/<uuid:client_pk>/attached-files/",
+        ClientAttachedFileViewSet.as_view({"post": "create", "get": "list"}),
+        name="client-attached-files",
+    ),
+    path(
+        "clients/<uuid:client_pk>/attached-files/<uuid:pk>/",
+        ClientAttachedFileViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="client-attached-file-detail",
+    ),
+    # Legacy route for attached files (without client context)
+    path(
+        "attached-files/",
+        ClientAttachedFileViewSet.as_view({"get": "list"}),
+        name="attached-files-list",
+    ),
+    path(
+        "attached-files/<uuid:pk>/",
+        ClientAttachedFileViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="attached-file-detail",
+    ),
+    # Annotations with client_id as parameter
     path(
         "annotations/by-client/<uuid:client_id>/",
         ClientAnnotationViewSet.as_view({"post": "create", "get": "list"}),

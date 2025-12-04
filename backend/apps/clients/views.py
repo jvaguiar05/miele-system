@@ -678,26 +678,70 @@ class ClientAttachedFileViewSet(viewsets.ModelViewSet):
     lookup_field = "public_id"
     permission_classes = [IsOwnerOrAdminForAttachedFiles]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["file_type", "uploaded_by_id"]
-    search_fields = ["file_name", "description"]
-    ordering_fields = ["created_at", "file_name"]
+    filterset_fields = ["file_type", "sync_status"]
+    search_fields = ["file_name", "drive_file_id"]
+    ordering_fields = ["created_at", "file_name", "file_size"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Filtrar apenas arquivos não excluídos do usuário (ou todos se admin)."""
+        """Filtrar arquivos sincronizados do cliente específico."""
         from django.contrib.contenttypes.models import ContentType
         from common.permissions import IsAdminUser
 
+        # Filtrar apenas arquivos acessíveis (sincronizados)
         client_ct = ContentType.objects.get(app_label="clients", model="client")
         queryset = AttachedFile.objects.filter(
-            deleted_at__isnull=True, content_type=client_ct
+            content_type=client_ct,
+            sync_status__in=["synced", "pending"],  # Apenas arquivos acessíveis
         )
+
+        # Filtrar por cliente específico se fornecido na URL
+        client_id = self.kwargs.get("client_pk") or self.request.query_params.get(
+            "client_id"
+        )
+        if client_id:
+            try:
+                from apps.clients.models import Client
+
+                client = Client.objects.get(public_id=client_id)
+                queryset = queryset.filter(object_id=client.id)
+            except Client.DoesNotExist:
+                queryset = queryset.none()
 
         # Se não for admin, filtrar apenas arquivos do usuário
         if not IsAdminUser().has_permission(self.request, self):
             queryset = queryset.filter(uploaded_by_id=self.request.user.id)
 
         return queryset
+
+    def get_serializer_class(self):
+        """Retorna serializer apropriado para cada ação."""
+        from common.shared.serializers import (
+            AttachedFileDetailSerializer,
+            AttachedFileGoogleDriveSerializer,
+        )
+
+        if self.action in ["create", "update", "partial_update"]:
+            return AttachedFileGoogleDriveSerializer
+        return AttachedFileDetailSerializer
+
+    def get_serializer_context(self):
+        """Adicionar contexto necessário para validações."""
+        context = super().get_serializer_context()
+
+        # Adicionar entidade (cliente) se disponível
+        client_id = self.kwargs.get("client_pk") or self.request.data.get("client_id")
+        if client_id:
+            try:
+                from apps.clients.models import Client
+
+                client = Client.objects.get(public_id=client_id)
+                context["entity"] = client
+                context["entity_type"] = "client"
+            except Client.DoesNotExist:
+                pass
+
+        return context
 
     def get_object(self):
         """Buscar objeto por public_id."""
@@ -716,5 +760,36 @@ class ClientAttachedFileViewSet(viewsets.ModelViewSet):
         return obj
 
     def perform_create(self, serializer):
-        """Automaticamente definir o usuário como o uploader."""
+        """Criar arquivo com validações do Google Drive."""
+        from common.services.google_drive import drive_service
+
+        # Validar se arquivo existe no Drive
+        drive_file_id = serializer.validated_data.get("drive_file_id")
+        if drive_file_id and not drive_service.file_exists(drive_file_id):
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError(
+                {"drive_file_id": "Arquivo não encontrado no Google Drive"}
+            )
+
+        # Validar acesso do usuário ao arquivo
+        if drive_file_id and not drive_service.validate_user_access(
+            drive_file_id, self.request.user
+        ):
+            from rest_framework.exceptions import PermissionDenied
+
+            raise PermissionDenied(
+                "Sem permissão para acessar este arquivo no Google Drive"
+            )
+
         serializer.save()
+
+    def perform_update(self, serializer):
+        """Atualizar com validações do Google Drive."""
+        self.perform_create(serializer)  # Mesmas validações
+
+    def perform_destroy(self, instance):
+        """Remover arquivo do sistema (sem deletar do Drive)."""
+        # Para Google Drive, fazemos delete físico direto
+        # O arquivo permanece no Drive, apenas remove referência do sistema
+        instance.delete()

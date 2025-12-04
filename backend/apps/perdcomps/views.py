@@ -302,24 +302,66 @@ class PerDcompAttachedFileViewSet(viewsets.ModelViewSet):
     lookup_field = "public_id"
     permission_classes = [IsOwnerOrAdminForAttachedFiles]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ["file_type", "mime_type"]
-    ordering_fields = ["created_at", "file_size"]
+    filterset_fields = ["file_type", "sync_status"]
+    ordering_fields = ["created_at", "file_size", "file_name"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Filtrar por arquivos não deletados do usuário (ou todos se admin)."""
+        """Filtrar arquivos sincronizados do PER/DCOMP específico."""
         from django.contrib.contenttypes.models import ContentType
 
+        # Filtrar apenas arquivos acessíveis (sincronizados)
         perdcomp_ct = ContentType.objects.get(app_label="perdcomps", model="perdcomp")
         queryset = AttachedFile.objects.filter(
-            deleted_at__isnull=True, content_type=perdcomp_ct
+            content_type=perdcomp_ct,
+            sync_status__in=["synced", "pending"],  # Apenas arquivos acessíveis
         )
+
+        # Filtrar por PER/DCOMP específico se fornecido na URL
+        perdcomp_id = self.kwargs.get("perdcomp_pk") or self.request.query_params.get(
+            "perdcomp_id"
+        )
+        if perdcomp_id:
+            try:
+                perdcomp = PerDcomp.objects.get(public_id=perdcomp_id)
+                queryset = queryset.filter(object_id=perdcomp.id)
+            except PerDcomp.DoesNotExist:
+                queryset = queryset.none()
 
         # Se não for admin, filtrar apenas arquivos do usuário
         if not IsAdminUser().has_permission(self.request, self):
             queryset = queryset.filter(uploaded_by_id=self.request.user.id)
 
         return queryset
+
+    def get_serializer_class(self):
+        """Retorna serializer apropriado para cada ação."""
+        from common.shared.serializers import (
+            AttachedFileDetailSerializer,
+            AttachedFileGoogleDriveSerializer,
+        )
+
+        if self.action in ["create", "update", "partial_update"]:
+            return AttachedFileGoogleDriveSerializer
+        return AttachedFileDetailSerializer
+
+    def get_serializer_context(self):
+        """Adicionar contexto necessário para validações."""
+        context = super().get_serializer_context()
+
+        # Adicionar entidade (perdcomp) se disponível
+        perdcomp_id = self.kwargs.get("perdcomp_pk") or self.request.data.get(
+            "perdcomp_id"
+        )
+        if perdcomp_id:
+            try:
+                perdcomp = PerDcomp.objects.get(public_id=perdcomp_id)
+                context["entity"] = perdcomp
+                context["entity_type"] = "perdcomp"
+            except PerDcomp.DoesNotExist:
+                pass
+
+        return context
 
     def get_object(self):
         """Buscar objeto por public_id."""
@@ -337,12 +379,40 @@ class PerDcompAttachedFileViewSet(viewsets.ModelViewSet):
         self.check_object_permissions(self.request, obj)
         return obj
 
-    def perform_destroy(self, instance):
-        """Soft delete com data de exclusão."""
-        from django.utils import timezone
+    def perform_create(self, serializer):
+        """Criar arquivo com validações do Google Drive."""
+        from common.services.google_drive import drive_service
 
-        instance.deleted_at = timezone.now()
-        instance.save()
+        # Validar se arquivo existe no Drive
+        drive_file_id = serializer.validated_data.get("drive_file_id")
+        if drive_file_id and not drive_service.file_exists(drive_file_id):
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError(
+                {"drive_file_id": "Arquivo não encontrado no Google Drive"}
+            )
+
+        # Validar acesso do usuário ao arquivo
+        if drive_file_id and not drive_service.validate_user_access(
+            drive_file_id, self.request.user
+        ):
+            from rest_framework.exceptions import PermissionDenied
+
+            raise PermissionDenied(
+                "Sem permissão para acessar este arquivo no Google Drive"
+            )
+
+        serializer.save()
+
+    def perform_update(self, serializer):
+        """Atualizar com validações do Google Drive."""
+        self.perform_create(serializer)  # Mesmas validações
+
+    def perform_destroy(self, instance):
+        """Remover arquivo do sistema (sem deletar do Drive)."""
+        # Para Google Drive, fazemos delete físico direto
+        # O arquivo permanece no Drive, apenas remove referência do sistema
+        instance.delete()
 
 
 @extend_schema(

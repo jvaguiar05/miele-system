@@ -246,3 +246,127 @@ class AttachedFileBasicSerializer(serializers.ModelSerializer):
         model = AttachedFile
         fields = ["id", "file_type", "file_name", "file_size_human", "created_at"]
         read_only_fields = ["id", "file_size_human", "created_at"]
+
+
+class AttachedFileDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer para listagem e detalhes de arquivos anexados (Google Drive).
+    """
+
+    uploaded_by = serializers.StringRelatedField(read_only=True)
+    file_size_human = serializers.CharField(read_only=True)
+    download_url = serializers.CharField(read_only=True)
+    preview_url = serializers.CharField(read_only=True)
+    content_type_name = serializers.SerializerMethodField()
+    entity_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AttachedFile
+        fields = [
+            "id",
+            "public_id",
+            "content_type_name",
+            "entity_id",
+            "file_type",
+            "file_name",
+            "file_size",
+            "file_size_human",
+            "drive_file_id",
+            "download_url",
+            "preview_url",
+            "sync_status",
+            "uploaded_by",
+            "created_at",
+            "is_accessible",
+        ]
+
+    def get_content_type_name(self, obj):
+        """Retorna nome do content type."""
+        return obj.content_type.model if obj.content_type else None
+
+    def get_entity_id(self, obj):
+        """Retorna ID da entidade pai."""
+        return obj.object_id
+
+
+class AttachedFileGoogleDriveSerializer(serializers.ModelSerializer):
+    """
+    Serializer para criação de arquivos anexados via Google Drive.
+    """
+
+    class Meta:
+        model = AttachedFile
+        fields = ["file_type", "file_name", "file_size", "drive_file_id"]
+
+    def __init__(self, *args, **kwargs):
+        # Capturar context para validações
+        self.entity_type = None
+        self.entity = None
+        self.request_user = None
+
+        super().__init__(*args, **kwargs)
+
+        # Extrair informações do context se disponível
+        if "request" in self.context:
+            self.request_user = self.context["request"].user
+
+        if "entity" in self.context:
+            self.entity = self.context["entity"]
+            self.entity_type = self.entity.__class__.__name__.lower()
+
+    def validate_file_type(self, value):
+        """Valida se tipo de arquivo é permitido para a entidade."""
+        from common.services.google_drive import drive_service
+
+        if self.entity_type and not drive_service.validate_file_type(
+            value, self.entity_type
+        ):
+            raise serializers.ValidationError(
+                f"Tipo de arquivo '{value}' não é permitido para {self.entity_type}"
+            )
+        return value
+
+    def validate_file_size(self, value):
+        """Valida se tamanho do arquivo está dentro dos limites."""
+        from common.services.google_drive import drive_service
+
+        if not drive_service.validate_file_size(value):
+            raise serializers.ValidationError(
+                "Tamanho do arquivo excede o limite máximo permitido"
+            )
+        return value
+
+    def validate_drive_file_id(self, value):
+        """Valida se arquivo existe no Google Drive."""
+        from common.services.google_drive import drive_service
+
+        if not value or value == "pending_upload":
+            raise serializers.ValidationError(
+                "ID do arquivo no Google Drive é obrigatório"
+            )
+
+        # Verificar se arquivo já está registrado
+        if AttachedFile.objects.filter(drive_file_id=value).exists():
+            raise serializers.ValidationError(
+                "Este arquivo já está registrado no sistema"
+            )
+
+        # Verificar se arquivo existe no Drive
+        if not drive_service.file_exists(value):
+            raise serializers.ValidationError("Arquivo não encontrado no Google Drive")
+
+        return value
+
+    def create(self, validated_data):
+        """Cria novo arquivo anexado."""
+        # Adicionar informações do contexto
+        if self.entity:
+            validated_data["content_object"] = self.entity
+
+        if self.request_user:
+            validated_data["uploaded_by_id"] = self.request_user.id
+
+        # Definir status inicial como sincronizado
+        validated_data["sync_status"] = "synced"
+
+        return super().create(validated_data)

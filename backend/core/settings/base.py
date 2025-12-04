@@ -394,3 +394,32 @@ JAZZMIN_UI_TWEAKS = {
         "success": "btn-outline-success",
     },
 }
+
+# ==============================================================================
+# GOOGLE DRIVE INTEGRATION SETTINGS
+# ==============================================================================
+
+# Google Drive API Configuration
+GDRIVE_SERVICE_ACCOUNT_FILE = env("GDRIVE_SERVICE_ACCOUNT_FILE", default=None, cast=str)
+
+# Folder structure in Google Drive
+GDRIVE_CLIENTS_FOLDER_ID = env("GDRIVE_CLIENTS_FOLDER_ID", default=None, cast=str)
+
+GDRIVE_PERDCOMPS_FOLDER_ID = env("GDRIVE_PERDCOMPS_FOLDER_ID", default=None, cast=str)
+
+# File size limits and timeouts
+GDRIVE_MAX_FILE_SIZE = env(
+    "GDRIVE_MAX_FILE_SIZE", default=100 * 1024 * 1024, cast=int  # 100MB
+)
+
+GDRIVE_API_TIMEOUT = env("GDRIVE_API_TIMEOUT", default=30, cast=int)  # seconds
+
+# Rate limiting for Google Drive API
+GDRIVE_REQUESTS_PER_MINUTE = env(
+    "GDRIVE_REQUESTS_PER_MINUTE", default=600, cast=int  # Conservative limit
+)
+
+# Sync verification schedule (hours)
+GDRIVE_SYNC_VERIFICATION_INTERVAL = env(
+    "GDRIVE_SYNC_VERIFICATION_INTERVAL", default=24, cast=int  # Check every 24 hours
+)

@@ -74,15 +74,32 @@ class AttachedFile(models.Model):
     object_id = models.PositiveBigIntegerField()
     content_object = GenericForeignKey("content_type", "object_id")
 
-    # Dados do arquivo
+    # Dados essenciais do arquivo
     file_type = models.CharField(
         max_length=50, help_text="Tipo do arquivo (específico por entidade)"
     )
-    file_name = models.CharField(max_length=255)
-    file_url = models.URLField(max_length=500)
+    file_name = models.CharField(max_length=255, help_text="Nome original do arquivo")
     file_size = models.PositiveBigIntegerField(help_text="Tamanho do arquivo em bytes")
-    mime_type = models.CharField(max_length=100, blank=True)
-    description = models.TextField(blank=True)
+
+    # Google Drive - campo obrigatório
+    drive_file_id = models.CharField(
+        max_length=100,
+        unique=True,
+        default="pending_upload",
+        help_text="ID único do arquivo no Google Drive",
+    )
+
+    # Controle de qualidade (opcional mas útil para UX)
+    sync_status = models.CharField(
+        max_length=20,
+        choices=[
+            ("synced", "Sincronizado"),
+            ("pending", "Pendente"),
+            ("error", "Erro na Sincronização"),
+        ],
+        default="synced",
+        help_text="Status de sincronização com Google Drive",
+    )
 
     # Controle de upload
     uploaded_by_id = models.BigIntegerField(help_text="ID do usuário que fez o upload")
@@ -90,16 +107,18 @@ class AttachedFile(models.Model):
     # Controle de datas
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    deleted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "common_attached_files"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["content_type", "object_id"]),
-            models.Index(fields=["file_type"]),
-            models.Index(fields=["uploaded_by_id"]),
-            models.Index(fields=["created_at"]),
+            models.Index(
+                fields=["content_type", "object_id"]
+            ),  # Buscar arquivos por entidade
+            models.Index(fields=["drive_file_id"]),  # Buscar por ID do Drive
+            models.Index(fields=["file_type"]),  # Filtrar por tipo
+            models.Index(fields=["uploaded_by_id"]),  # Filtrar por usuário
+            models.Index(fields=["sync_status"]),  # Filtrar por status
         ]
 
     def __str__(self):
@@ -116,10 +135,38 @@ class AttachedFile(models.Model):
         except User.DoesNotExist:
             return None
 
-    def soft_delete(self):
-        """Exclusão lógica do arquivo."""
-        self.deleted_at = timezone.now()
-        self.save()
+    @property
+    def is_accessible(self):
+        """Verifica se arquivo está acessível no Google Drive."""
+        return self.sync_status == "synced"
+
+    def mark_sync_error(self):
+        """Marca arquivo com erro de sincronização."""
+        self.sync_status = "error"
+        self.save(update_fields=["sync_status"])
+
+    @property
+    def download_url(self):
+        """URL de download direto gerada dinamicamente."""
+        return f"https://drive.google.com/uc?id={self.drive_file_id}&export=download"
+
+    @property
+    def preview_url(self):
+        """URL para preview no navegador gerada dinamicamente."""
+        return f"https://drive.google.com/file/d/{self.drive_file_id}/view"
+
+    @property
+    def file_size_human(self):
+        """Retorna o tamanho do arquivo em formato legível."""
+        size = self.file_size
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        elif size < 1024 * 1024 * 1024:
+            return f"{size / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size / (1024 * 1024 * 1024):.1f} GB"
 
     @property
     def file_size_human(self):

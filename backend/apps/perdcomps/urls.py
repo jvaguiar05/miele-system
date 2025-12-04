@@ -8,13 +8,46 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r"", PerDcompViewSet, basename="perdcomp")
-router.register(
-    r"attached-files", PerDcompAttachedFileViewSet, basename="perdcomp-attached-file"
-)
-# Remove the old annotations route since we'll use a custom path pattern
 
-# Custom path for annotations with perdcomp_id as parameter
+# Custom paths for nested resources
 urlpatterns = [
+    # Nested attached files routes
+    path(
+        "<uuid:perdcomp_pk>/attached-files/",
+        PerDcompAttachedFileViewSet.as_view({"post": "create", "get": "list"}),
+        name="perdcomp-attached-files",
+    ),
+    path(
+        "<uuid:perdcomp_pk>/attached-files/<uuid:pk>/",
+        PerDcompAttachedFileViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="perdcomp-attached-file-detail",
+    ),
+    # Legacy route for attached files (without perdcomp context)
+    path(
+        "attached-files/",
+        PerDcompAttachedFileViewSet.as_view({"get": "list"}),
+        name="perdcomp-attached-files-list",
+    ),
+    path(
+        "attached-files/<uuid:pk>/",
+        PerDcompAttachedFileViewSet.as_view(
+            {
+                "get": "retrieve",
+                "put": "update",
+                "patch": "partial_update",
+                "delete": "destroy",
+            }
+        ),
+        name="perdcomp-attached-file-detail",
+    ),
+    # Annotations with perdcomp_id as parameter
     path(
         "annotations/by-perdcomp/<uuid:perdcomp_id>/",
         PerDcompAnnotationViewSet.as_view({"post": "create", "get": "list"}),
