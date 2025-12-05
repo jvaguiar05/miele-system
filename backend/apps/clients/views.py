@@ -11,18 +11,16 @@ from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
 from .models import Client, Address
-from common.shared.models import Annotation, AttachedFile
+from common.shared.models import Annotation
 from .serializers import (
     ClientSerializer,
     ClientBasicSerializer,
     ClientSensitiveSerializer,
     AddressSerializer,
     ClientAnnotationSerializer,
-    ClientAttachedFileSerializer,
 )
 from common.shared.permissions import (
     IsOwnerOrAdminForAnnotations,
-    IsOwnerOrAdminForAttachedFiles,
 )
 
 
@@ -662,134 +660,3 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """Excluir anotação."""
         return super().destroy(request, *args, **kwargs)
-
-
-@extend_schema(
-    tags=["Clientes - Arquivos"],
-    summary="Gerenciamento de arquivos anexados a clientes",
-    description="Endpoints para CRUD de arquivos anexados a clientes.",
-)
-class ClientAttachedFileViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para gerenciamento de arquivos anexados a clientes.
-    """
-
-    serializer_class = ClientAttachedFileSerializer
-    lookup_field = "public_id"
-    permission_classes = [IsOwnerOrAdminForAttachedFiles]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["file_type", "sync_status"]
-    search_fields = ["file_name", "drive_file_id"]
-    ordering_fields = ["created_at", "file_name", "file_size"]
-    ordering = ["-created_at"]
-
-    def get_queryset(self):
-        """Filtrar arquivos sincronizados do cliente específico."""
-        from django.contrib.contenttypes.models import ContentType
-        from common.permissions import IsAdminUser
-
-        # Filtrar apenas arquivos acessíveis (sincronizados)
-        client_ct = ContentType.objects.get(app_label="clients", model="client")
-        queryset = AttachedFile.objects.filter(
-            content_type=client_ct,
-            sync_status__in=["synced", "pending"],  # Apenas arquivos acessíveis
-        )
-
-        # Filtrar por cliente específico se fornecido na URL
-        client_id = self.kwargs.get("client_pk") or self.request.query_params.get(
-            "client_id"
-        )
-        if client_id:
-            try:
-                from apps.clients.models import Client
-
-                client = Client.objects.get(public_id=client_id)
-                queryset = queryset.filter(object_id=client.id)
-            except Client.DoesNotExist:
-                queryset = queryset.none()
-
-        # Se não for admin, filtrar apenas arquivos do usuário
-        if not IsAdminUser().has_permission(self.request, self):
-            queryset = queryset.filter(uploaded_by_id=self.request.user.id)
-
-        return queryset
-
-    def get_serializer_class(self):
-        """Retorna serializer apropriado para cada ação."""
-        from common.shared.serializers import (
-            AttachedFileDetailSerializer,
-            AttachedFileGoogleDriveSerializer,
-        )
-
-        if self.action in ["create", "update", "partial_update"]:
-            return AttachedFileGoogleDriveSerializer
-        return AttachedFileDetailSerializer
-
-    def get_serializer_context(self):
-        """Adicionar contexto necessário para validações."""
-        context = super().get_serializer_context()
-
-        # Adicionar entidade (cliente) se disponível
-        client_id = self.kwargs.get("client_pk") or self.request.data.get("client_id")
-        if client_id:
-            try:
-                from apps.clients.models import Client
-
-                client = Client.objects.get(public_id=client_id)
-                context["entity"] = client
-                context["entity_type"] = "client"
-            except Client.DoesNotExist:
-                pass
-
-        return context
-
-    def get_object(self):
-        """Buscar objeto por public_id."""
-        queryset = self.filter_queryset(self.get_queryset())
-        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-        lookup_value = self.kwargs[lookup_url_kwarg]
-
-        try:
-            obj = queryset.get(**{self.lookup_field: lookup_value})
-        except AttachedFile.DoesNotExist:
-            from django.http import Http404
-
-            raise Http404("Arquivo não encontrado.")
-
-        self.check_object_permissions(self.request, obj)
-        return obj
-
-    def perform_create(self, serializer):
-        """Criar arquivo com validações do Google Drive."""
-        from common.services.google_drive import drive_service
-
-        # Validar se arquivo existe no Drive
-        drive_file_id = serializer.validated_data.get("drive_file_id")
-        if drive_file_id and not drive_service.file_exists(drive_file_id):
-            from rest_framework.exceptions import ValidationError
-
-            raise ValidationError(
-                {"drive_file_id": "Arquivo não encontrado no Google Drive"}
-            )
-
-        # Validar acesso do usuário ao arquivo
-        if drive_file_id and not drive_service.validate_user_access(
-            drive_file_id, self.request.user
-        ):
-            from rest_framework.exceptions import PermissionDenied
-
-            raise PermissionDenied(
-                "Sem permissão para acessar este arquivo no Google Drive"
-            )
-
-        serializer.save()
-
-    def perform_update(self, serializer):
-        """Atualizar com validações do Google Drive."""
-        self.perform_create(serializer)  # Mesmas validações
-
-    def perform_destroy(self, instance):
-        """Remover arquivo do sistema (sem deletar do Drive)."""
-        # Para Google Drive, fazemos delete físico direto
-        # O arquivo permanece no Drive, apenas remove referência do sistema
-        instance.delete()
