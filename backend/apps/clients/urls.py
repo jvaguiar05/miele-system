@@ -13,12 +13,12 @@ router.register(r"clients", ClientViewSet, basename="client")
 urlpatterns = [
     # Nested attached files routes
     path(
-        "clients/<uuid:client_pk>/attached-files/",
+        "clients/<uuid:client_id>/attached-files/",
         ClientAttachedFileViewSet.as_view({"post": "create", "get": "list"}),
         name="client-attached-files",
     ),
     path(
-        "clients/<uuid:client_pk>/attached-files/<uuid:pk>/",
+        "clients/<uuid:client_id>/attached-files/<uuid:pk>/",
         ClientAttachedFileViewSet.as_view(
             {
                 "get": "retrieve",
@@ -28,24 +28,6 @@ urlpatterns = [
             }
         ),
         name="client-attached-file-detail",
-    ),
-    # Legacy route for attached files (without client context)
-    path(
-        "attached-files/",
-        ClientAttachedFileViewSet.as_view({"get": "list"}),
-        name="attached-files-list",
-    ),
-    path(
-        "attached-files/<uuid:pk>/",
-        ClientAttachedFileViewSet.as_view(
-            {
-                "get": "retrieve",
-                "put": "update",
-                "patch": "partial_update",
-                "delete": "destroy",
-            }
-        ),
-        name="attached-file-detail",
     ),
     # Annotations with client_id as parameter
     path(

@@ -89,6 +89,13 @@ class AttachedFile(models.Model):
         help_text="ID único do arquivo no Google Drive",
     )
 
+    # Descrição opcional do arquivo
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Descrição opcional do arquivo"
+    )
+
     # Controle de qualidade (opcional mas útil para UX)
     sync_status = models.CharField(
         max_length=20,

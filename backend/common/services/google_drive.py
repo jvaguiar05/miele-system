@@ -1,11 +1,23 @@
 """
 Service layer para integração com Google Drive API.
+
+IMPORTANTE: Este serviço NÃO faz upload/download de arquivos.
+O frontend é responsável por essas operações.
 """
 
 import logging
+import os
 from typing import Optional, Dict, Any
 from django.conf import settings
-from django.core.exceptions import ValidationError
+
+try:
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    GOOGLE_API_AVAILABLE = True
+except ImportError:
+    GOOGLE_API_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -16,45 +28,111 @@ class GoogleDriveServiceError(Exception):
     pass
 
 
+class GoogleDriveAuthenticationError(GoogleDriveServiceError):
+    """Erro de autenticação com Google Drive."""
+
+    pass
+
+
+class GoogleDriveFileNotFoundError(GoogleDriveServiceError):
+    """Arquivo não encontrado no Google Drive."""
+
+    pass
+
+
+class GoogleDrivePermissionError(GoogleDriveServiceError):
+    """Erro de permissão no Google Drive."""
+
+    pass
+
+
 class GoogleDriveService:
     """
-    Serviço para integração com Google Drive API.
+    Serviço para integração com Google Drive API - SOMENTE LEITURA.
+
+    IMPORTANTE: Este serviço NÃO faz upload/download de arquivos.
+    O frontend é responsável por essas operações.
 
     Responsabilidades:
-    - Validar existência de arquivos no Drive
-    - Obter metadados de arquivos
+    - Validar se arquivo existe no Drive (através do file_id fornecido pelo frontend)
+    - Obter metadados de arquivos (nome, tamanho, tipo, links)
     - Validar permissões de acesso
-    - Gerenciar estrutura de pastas
     """
 
     def __init__(self):
-        self.service = None  # Será inicializado quando necessário
-        self._folder_mapping = {
-            "client": getattr(settings, "GDRIVE_CLIENTS_FOLDER_ID", None),
-            "perdcomp": getattr(settings, "GDRIVE_PERDCOMPS_FOLDER_ID", None),
-        }
+        self.service = None
+        self._scopes = [
+            "https://www.googleapis.com/auth/drive.readonly"
+        ]  # Apenas leitura!
 
     def _get_authenticated_service(self):
         """
-        Obtém serviço autenticado do Google Drive.
+        Obtém serviço autenticado do Google Drive usando service account.
 
-        TODO: Implementar autenticação com service account
+        Raises:
+            GoogleDriveAuthenticationError: Se não conseguir autenticar
         """
-        if not self.service:
-            # TODO: Implementar autenticação real
-            # from google.oauth2.service_account import Credentials
-            # from googleapiclient.discovery import build
-            #
-            # creds = Credentials.from_service_account_file(
-            #     settings.GDRIVE_SERVICE_ACCOUNT_FILE,
-            #     scopes=['https://www.googleapis.com/auth/drive']
-            # )
-            # self.service = build('drive', 'v3', credentials=creds)
-            logger.warning(
-                "Google Drive service não implementado ainda - retornando mock"
+        if self.service:
+            return self.service
+
+        if not GOOGLE_API_AVAILABLE:
+            raise GoogleDriveAuthenticationError(
+                "Bibliotecas do Google API não estão instaladas. "
+                "Execute: pip install google-api-python-client google-auth"
             )
 
-        return self.service
+        try:
+            # Verificar se arquivo de credenciais existe
+            credentials_file = getattr(settings, "GDRIVE_SERVICE_ACCOUNT_FILE", None)
+            if not credentials_file:
+                raise GoogleDriveAuthenticationError(
+                    "GDRIVE_SERVICE_ACCOUNT_FILE não configurado nas settings"
+                )
+
+            if not os.path.exists(credentials_file):
+                raise GoogleDriveAuthenticationError(
+                    f"Arquivo de credenciais não encontrado: {credentials_file}"
+                )
+
+            # Criar credenciais a partir do arquivo de service account
+            credentials = Credentials.from_service_account_file(
+                credentials_file, scopes=self._scopes
+            )
+
+            # Construir serviço
+            self.service = build("drive", "v3", credentials=credentials)
+
+            # Testar autenticação fazendo uma chamada simples
+            self.service.about().get(fields="user").execute()
+
+            logger.info("Google Drive service autenticado com sucesso (readonly)")
+            return self.service
+
+        except Exception as e:
+            logger.error(f"Erro ao autenticar com Google Drive: {e}")
+            raise GoogleDriveAuthenticationError(f"Falha na autenticação: {e}")
+
+    def _handle_api_error(self, error, context=""):
+        """
+        Converte erros da API em exceções específicas.
+
+        Args:
+            error: Exceção original
+            context: Contexto da operação
+        """
+        if isinstance(error, HttpError):
+            status_code = error.resp.status
+
+            if status_code == 404:
+                raise GoogleDriveFileNotFoundError(f"Arquivo não encontrado. {context}")
+            elif status_code == 403:
+                raise GoogleDrivePermissionError(f"Permissão negada. {context}")
+            else:
+                raise GoogleDriveServiceError(
+                    f"Erro da API Google Drive: {error}. {context}"
+                )
+        else:
+            raise GoogleDriveServiceError(f"Erro inesperado: {error}. {context}")
 
     def file_exists(self, file_id: str) -> bool:
         """
@@ -70,16 +148,19 @@ class GoogleDriveService:
             if not file_id:
                 return False
 
-            # TODO: Implementar verificação real
-            # service = self._get_authenticated_service()
-            # service.files().get(fileId=file_id).execute()
+            service = self._get_authenticated_service()
 
-            # Mock para desenvolvimento
-            logger.info(f"Verificando existência do arquivo: {file_id}")
-            return True  # Mock sempre retorna True
+            # Verificar se arquivo existe tentando obter metadados mínimos
+            service.files().get(fileId=file_id, fields="id").execute()
 
+            logger.debug(f"Arquivo {file_id} existe no Google Drive")
+            return True
+
+        except GoogleDriveFileNotFoundError:
+            logger.debug(f"Arquivo {file_id} não encontrado no Google Drive")
+            return False
         except Exception as e:
-            logger.error(f"Erro ao verificar arquivo {file_id}: {e}")
+            self._handle_api_error(e, f"Verificando existência do arquivo {file_id}")
             return False
 
     def get_file_metadata(self, file_id: str) -> Optional[Dict[str, Any]]:
@@ -96,32 +177,135 @@ class GoogleDriveService:
             if not file_id:
                 return None
 
-            # TODO: Implementar busca real
-            # service = self._get_authenticated_service()
-            # file_metadata = service.files().get(
-            #     fileId=file_id,
-            #     fields='id,name,size,mimeType,webViewLink,webContentLink,parents'
-            # ).execute()
+            service = self._get_authenticated_service()
 
-            # Mock para desenvolvimento
-            logger.info(f"Obtendo metadados do arquivo: {file_id}")
+            # Obter metadados completos do arquivo
+            file_metadata = (
+                service.files()
+                .get(
+                    fileId=file_id,
+                    fields="id,name,size,mimeType,webViewLink,webContentLink,parents,createdTime,modifiedTime,owners",
+                )
+                .execute()
+            )
+
+            logger.debug(f"Metadados obtidos para arquivo {file_id}")
             return {
-                "id": file_id,
-                "name": f"mock_file_{file_id}.pdf",
-                "size": "1024",
-                "mimeType": "application/pdf",
-                "webViewLink": f"https://drive.google.com/file/d/{file_id}/view",
-                "webContentLink": f"https://drive.google.com/uc?id={file_id}&export=download",
-                "parents": ["mock_folder_id"],
+                "id": file_metadata.get("id"),
+                "name": file_metadata.get("name"),
+                "size": (
+                    int(file_metadata.get("size", 0))
+                    if file_metadata.get("size")
+                    else 0
+                ),
+                "mimeType": file_metadata.get("mimeType"),
+                "webViewLink": file_metadata.get("webViewLink"),
+                "webContentLink": file_metadata.get("webContentLink"),
+                "parents": file_metadata.get("parents", []),
+                "createdTime": file_metadata.get("createdTime"),
+                "modifiedTime": file_metadata.get("modifiedTime"),
+                "owners": file_metadata.get("owners", []),
+            }
+
+        except GoogleDriveFileNotFoundError:
+            logger.warning(f"Arquivo {file_id} não encontrado para obter metadados")
+            return None
+        except Exception as e:
+            self._handle_api_error(e, f"Obtendo metadados do arquivo {file_id}")
+            return None
+
+    def validate_file_reference(
+        self, file_id: str, expected_name: str = None
+    ) -> Dict[str, Any]:
+        """
+        Valida uma referência de arquivo fornecida pelo frontend.
+
+        Args:
+            file_id: ID do arquivo no Google Drive (fornecido pelo frontend)
+            expected_name: Nome esperado do arquivo (opcional, para validação extra)
+
+        Returns:
+            Dicionário com resultado da validação e metadados
+        """
+        try:
+            if not file_id:
+                return {"valid": False, "error": "file_id é obrigatório"}
+
+            # Verificar se arquivo existe e obter metadados
+            metadata = self.get_file_metadata(file_id)
+            if not metadata:
+                return {
+                    "valid": False,
+                    "error": "Arquivo não encontrado no Google Drive",
+                }
+
+            # Validação opcional de nome
+            if expected_name and metadata.get("name") != expected_name:
+                logger.warning(
+                    f"Nome do arquivo não confere. Esperado: {expected_name}, "
+                    f"Encontrado: {metadata.get('name')}"
+                )
+
+            return {
+                "valid": True,
+                "metadata": metadata,
+                "file_id": file_id,
+                "download_url": metadata.get("webContentLink"),
+                "view_url": metadata.get("webViewLink"),
             }
 
         except Exception as e:
-            logger.error(f"Erro ao obter metadados do arquivo {file_id}: {e}")
+            logger.error(f"Erro ao validar referência do arquivo {file_id}: {e}")
+            return {"valid": False, "error": f"Erro na validação: {str(e)}"}
+
+    def get_download_url(self, file_id: str) -> Optional[str]:
+        """
+        Obtém URL de download direto do arquivo.
+
+        Args:
+            file_id: ID do arquivo no Google Drive
+
+        Returns:
+            URL de download ou None se não encontrado
+        """
+        try:
+            metadata = self.get_file_metadata(file_id)
+            if not metadata:
+                return None
+
+            return metadata.get("webContentLink")
+
+        except Exception as e:
+            logger.error(f"Erro ao obter URL de download para {file_id}: {e}")
+            return None
+
+    def get_view_url(self, file_id: str) -> Optional[str]:
+        """
+        Obtém URL de visualização do arquivo no navegador.
+
+        Args:
+            file_id: ID do arquivo no Google Drive
+
+        Returns:
+            URL de visualização ou None se não encontrado
+        """
+        try:
+            metadata = self.get_file_metadata(file_id)
+            if not metadata:
+                return None
+
+            return metadata.get("webViewLink")
+
+        except Exception as e:
+            logger.error(f"Erro ao obter URL de visualização para {file_id}: {e}")
             return None
 
     def validate_user_access(self, file_id: str, user) -> bool:
         """
         Valida se usuário tem acesso ao arquivo no Google Drive.
+
+        Como usamos service account, o controle de acesso é feito
+        a nível de aplicação, não no Google Drive.
 
         Args:
             file_id: ID do arquivo no Google Drive
@@ -131,15 +315,17 @@ class GoogleDriveService:
             True se usuário tem acesso, False caso contrário
         """
         try:
-            # TODO: Implementar validação real de permissões
-            # Por agora, assumimos que se o usuário tem permissão no backend,
-            # também tem no Drive
-
             if not file_id or not user:
                 return False
 
-            logger.info(f"Validando acesso do usuário {user.id} ao arquivo {file_id}")
-            return True  # Mock sempre permite acesso
+            # Verificar se arquivo existe
+            if not self.file_exists(file_id):
+                return False
+
+            # Como usamos service account, o controle de acesso é feito
+            # a nível de aplicação através das permissões do Django
+            logger.debug(f"Acesso validado para usuário {user.id} ao arquivo {file_id}")
+            return True
 
         except Exception as e:
             logger.error(
@@ -147,54 +333,32 @@ class GoogleDriveService:
             )
             return False
 
-    def delete_file(self, file_id: str) -> bool:
+    def sync_file_status(self, file_id: str) -> Dict[str, Any]:
         """
-        Remove arquivo do Google Drive.
+        Sincroniza status de um arquivo com o Google Drive.
 
         Args:
             file_id: ID do arquivo no Google Drive
 
         Returns:
-            True se removido com sucesso, False caso contrário
+            Dicionário com status de sincronização
         """
         try:
-            if not file_id:
-                return False
+            metadata = self.get_file_metadata(file_id)
 
-            # TODO: Implementar remoção real
-            # service = self._get_authenticated_service()
-            # service.files().delete(fileId=file_id).execute()
-
-            logger.info(f"Removendo arquivo do Drive: {file_id}")
-            return True  # Mock sempre sucesso
+            if metadata:
+                return {
+                    "exists": True,
+                    "last_modified": metadata.get("modifiedTime"),
+                    "size": metadata.get("size", 0),
+                    "sync_status": "synced",
+                }
+            else:
+                return {"exists": False, "sync_status": "missing"}
 
         except Exception as e:
-            logger.error(f"Erro ao remover arquivo {file_id}: {e}")
-            return False
-
-    def get_folder_id_for_entity(
-        self, entity_type: str, entity_id: int
-    ) -> Optional[str]:
-        """
-        Obtém ID da pasta para uma entidade específica.
-
-        Args:
-            entity_type: Tipo da entidade ('client', 'perdcomp')
-            entity_id: ID da entidade
-
-        Returns:
-            ID da pasta no Google Drive ou None
-        """
-        base_folder = self._folder_mapping.get(entity_type)
-        if not base_folder:
-            logger.warning(f"Pasta base não configurada para {entity_type}")
-            return None
-
-        # TODO: Implementar criação/busca de subpasta por entidade
-        # Por exemplo: Clients/Client_123/
-
-        # Mock retorna pasta base
-        return base_folder
+            logger.error(f"Erro ao sincronizar status do arquivo {file_id}: {e}")
+            return {"exists": False, "sync_status": "error", "error": str(e)}
 
     def validate_file_type(self, file_type: str, entity_type: str) -> bool:
         """
@@ -207,16 +371,35 @@ class GoogleDriveService:
         Returns:
             True se tipo é válido, False caso contrário
         """
-        from common.shared.models import CLIENT_FILE_TYPES, PERDCOMP_FILE_TYPES
+        try:
+            from common.shared.models import CLIENT_FILE_TYPES, PERDCOMP_FILE_TYPES
 
-        if entity_type == "client":
-            valid_types = [choice[0] for choice in CLIENT_FILE_TYPES]
-        elif entity_type == "perdcomp":
-            valid_types = [choice[0] for choice in PERDCOMP_FILE_TYPES]
-        else:
+            if entity_type == "client":
+                valid_types = [choice[0] for choice in CLIENT_FILE_TYPES]
+            elif entity_type == "perdcomp":
+                valid_types = [choice[0] for choice in PERDCOMP_FILE_TYPES]
+            else:
+                logger.warning(f"Tipo de entidade desconhecido: {entity_type}")
+                return False
+
+            is_valid = file_type in valid_types
+
+            if not is_valid:
+                logger.warning(
+                    f"Tipo de arquivo '{file_type}' não permitido para {entity_type}. "
+                    f"Tipos válidos: {valid_types}"
+                )
+
+            return is_valid
+
+        except ImportError:
+            logger.error(
+                "Não foi possível importar tipos de arquivo. Permitindo qualquer tipo."
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao validar tipo de arquivo: {e}")
             return False
-
-        return file_type in valid_types
 
     def validate_file_size(self, file_size: int) -> bool:
         """
@@ -228,8 +411,25 @@ class GoogleDriveService:
         Returns:
             True se tamanho é válido, False caso contrário
         """
-        max_size = getattr(settings, "GDRIVE_MAX_FILE_SIZE", 100 * 1024 * 1024)  # 100MB
-        return 0 < file_size <= max_size
+        try:
+            max_size = getattr(
+                settings, "GDRIVE_MAX_FILE_SIZE", 100 * 1024 * 1024
+            )  # 100MB padrão
+            min_size = 1  # Pelo menos 1 byte
+
+            is_valid = min_size <= file_size <= max_size
+
+            if not is_valid:
+                logger.warning(
+                    f"Tamanho de arquivo inválido: {file_size} bytes. "
+                    f"Limite: {min_size} - {max_size} bytes"
+                )
+
+            return is_valid
+
+        except Exception as e:
+            logger.error(f"Erro ao validar tamanho de arquivo: {e}")
+            return False
 
 
 # Instância singleton do serviço

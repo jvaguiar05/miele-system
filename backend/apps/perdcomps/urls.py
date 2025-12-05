@@ -13,30 +13,12 @@ router.register(r"", PerDcompViewSet, basename="perdcomp")
 urlpatterns = [
     # Nested attached files routes
     path(
-        "<uuid:perdcomp_pk>/attached-files/",
+        "<uuid:perdcomp_id>/attached-files/",
         PerDcompAttachedFileViewSet.as_view({"post": "create", "get": "list"}),
         name="perdcomp-attached-files",
     ),
     path(
-        "<uuid:perdcomp_pk>/attached-files/<uuid:pk>/",
-        PerDcompAttachedFileViewSet.as_view(
-            {
-                "get": "retrieve",
-                "put": "update",
-                "patch": "partial_update",
-                "delete": "destroy",
-            }
-        ),
-        name="perdcomp-attached-file-detail",
-    ),
-    # Legacy route for attached files (without perdcomp context)
-    path(
-        "attached-files/",
-        PerDcompAttachedFileViewSet.as_view({"get": "list"}),
-        name="perdcomp-attached-files-list",
-    ),
-    path(
-        "attached-files/<uuid:pk>/",
+        "<uuid:perdcomp_id>/attached-files/<uuid:pk>/",
         PerDcompAttachedFileViewSet.as_view(
             {
                 "get": "retrieve",

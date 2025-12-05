@@ -5,12 +5,32 @@ from dateutil.relativedelta import relativedelta
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
+from drf_spectacular.utils import extend_schema
 
 from apps.clients.models import Client
 from apps.perdcomps.models import PerDcomp
 
 
+class DashboardStatsSerializer(serializers.Serializer):
+    """Serializer para resposta das estatísticas do dashboard."""
+    
+    # Main cards
+    total_active_clients = serializers.IntegerField()
+    new_clients_this_month = serializers.IntegerField()
+    perdcomps_vencimento_this_month = serializers.IntegerField()
+    pending_approval_requests = serializers.IntegerField()
+    
+    # Chart data
+    clients_last_6_months = serializers.ListField(child=serializers.DictField())
+    perdcomps_last_6_months = serializers.ListField(child=serializers.DictField())
+    
+    # Additional stats
+    clients_by_status = serializers.DictField()
+    perdcomps_by_status = serializers.DictField()
+
+
+@extend_schema(responses=DashboardStatsSerializer)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dashboard_stats(request):
