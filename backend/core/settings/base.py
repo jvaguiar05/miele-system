@@ -205,10 +205,6 @@ SPECTACULAR_SETTINGS = {
             "description": "Endpoints relacionados às anotações feitas por usuários em clientes",
         },
         {
-            "name": "Clientes - Arquivos",
-            "description": "Endpoints relacionados aos arquivos anexados a clientes",
-        },
-        {
             "name": "PER/DCOMPs",
             "description": "Endpoints relacionados a PER/DCOMPs (Perdas e Compensações)",
         },
@@ -217,9 +213,9 @@ SPECTACULAR_SETTINGS = {
             "description": "Endpoints relacionados às anotações dos PER/DCOMPs",
         },
         {
-            "name": "PER/DCOMPs - Arquivos",
-            "description": "Endpoints relacionados aos arquivos anexados aos PER/DCOMPs",
-        },
+            "name": "Google Drive - Arquivos",
+            "description": "Endpoints relacionados ao gerenciamento de arquivos no Google Drive",
+        }
     ],
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
