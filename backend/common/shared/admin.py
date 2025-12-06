@@ -64,12 +64,13 @@ class AttachedFileAdmin(admin.ModelAdmin):
         "get_uploaded_by_display",
         "file_type",
         "file_size_human",
+        "sync_status",
         "content_type",
         "created_at",
     ]
-    list_filter = ["file_type", "content_type", "mime_type", "created_at"]
-    search_fields = ["file_name", "description", "uploaded_by_id"]
-    readonly_fields = ["public_id", "file_size_human", "created_at", "updated_at"]
+    list_filter = ["file_type", "content_type", "sync_status", "created_at"]
+    search_fields = ["file_name", "drive_file_id", "uploaded_by_id"]
+    readonly_fields = ["public_id", "file_size_human", "created_at"]
 
     fieldsets = (
         (
@@ -79,15 +80,15 @@ class AttachedFileAdmin(admin.ModelAdmin):
                     "public_id",
                     "file_name",
                     "file_type",
-                    "mime_type",
-                    "description",
+                    "file_size",
+                    "file_size_human",
                 ),
             },
         ),
         (
-            "Upload",
+            "Google Drive",
             {
-                "fields": ("file_url", "file_size", "file_size_human"),
+                "fields": ("drive_file_id", "sync_status"),
             },
         ),
         (
@@ -99,7 +100,7 @@ class AttachedFileAdmin(admin.ModelAdmin):
         (
             "Controle",
             {
-                "fields": ("uploaded_by_id", "created_at", "updated_at", "deleted_at"),
+                "fields": ("uploaded_by_id", "created_at"),
             },
         ),
     )
@@ -145,8 +146,9 @@ class AttachedFileInline(GenericTabularInline):
     fields = [
         "file_name",
         "file_type",
-        "file_url",
+        "drive_file_id",
         "file_size",
+        "sync_status",
         "uploaded_by_id",
         "created_at",
     ]
@@ -154,8 +156,3 @@ class AttachedFileInline(GenericTabularInline):
     verbose_name = "Arquivo Anexo"
     verbose_name_plural = "Arquivos Anexos"
     can_delete = True
-
-    def get_queryset(self, request):
-        """Filter out soft-deleted files."""
-        qs = super().get_queryset(request)
-        return qs.filter(deleted_at__isnull=True)

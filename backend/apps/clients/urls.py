@@ -3,18 +3,14 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ClientViewSet,
     ClientAnnotationViewSet,
-    ClientAttachedFileViewSet,
 )
 
 router = DefaultRouter()
 router.register(r"clients", ClientViewSet, basename="client")
-# Remove the old annotations route since we'll use a custom path pattern
-router.register(
-    r"attached-files", ClientAttachedFileViewSet, basename="clientattachedfile"
-)
 
-# Custom path for annotations with client_id as parameter
+# Custom paths for nested resources
 urlpatterns = [
+    # Annotations with client_id as parameter
     path(
         "annotations/by-client/<uuid:client_id>/",
         ClientAnnotationViewSet.as_view({"post": "create", "get": "list"}),

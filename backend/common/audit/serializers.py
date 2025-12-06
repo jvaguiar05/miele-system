@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.contenttypes.models import ContentType
+from drf_spectacular.utils import extend_schema_field
 from .models import AuditLog
 
 
@@ -33,6 +34,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             "timestamp",
         ]
 
+    @extend_schema_field(serializers.CharField)
     def get_user_name(self, obj):
         """Retorna o nome completo do usuário."""
         if obj.user:
@@ -42,6 +44,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             )
         return None
 
+    @extend_schema_field(serializers.CharField)
     def get_resource_id(self, obj):
         """Retorna o public_id do recurso afetado quando disponível."""
         if not obj.content_object:
@@ -53,6 +56,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
         return obj.object_id  # Fallback para ID interno
 
+    @extend_schema_field(serializers.CharField)
     def get_resource_display_name(self, obj):
         """Retorna um nome/descrição amigável do recurso afetado."""
         if not obj.content_object:

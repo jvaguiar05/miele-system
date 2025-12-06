@@ -1,12 +1,10 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import PerDcomp
-from common.shared.models import Annotation, AttachedFile
+from common.shared.models import Annotation
 from common.shared.serializers import (
     AnnotationSerializer,
-    AttachedFileSerializer,
     AnnotationBasicSerializer,
-    AttachedFileBasicSerializer,
 )
 
 
@@ -44,48 +42,7 @@ class PerDcompAnnotationSerializer(AnnotationSerializer):
         return super().validate(attrs)
 
 
-class PerDcompAttachedFileSerializer(AttachedFileSerializer):
-    """Serializer para arquivos de PER/DCOMPs."""
 
-    # Substituir entity_type e entity_id por perdcomp_id mais simples
-    entity_type = None  # Não expor este campo
-    entity_id = None  # Não expor este campo
-    perdcomp_id = serializers.UUIDField(
-        write_only=True, help_text="UUID do PER/DCOMP para associar o arquivo"
-    )
-
-    class Meta(AttachedFileSerializer.Meta):
-        fields = [
-            "id",
-            "perdcomp_id",  # Substituir entity_type e entity_id
-            "entity_name",
-            "uploaded_by_name",
-            "file_name",
-            "description",
-            "file_type",
-            "file_size",
-            "mime_type",
-            "file_url",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "entity_name",
-            "uploaded_by_name",
-            "file_size",
-            "mime_type",
-            "file_url",
-            "created_at",
-            "updated_at",
-        ]
-
-    def validate(self, attrs):
-        # Converter perdcomp_id para entity_type e entity_id
-        if "perdcomp_id" in attrs:
-            attrs["entity_type"] = "perdcomp"
-            attrs["entity_id"] = attrs.pop("perdcomp_id")
-        return super().validate(attrs)
 
 
 class PerDcompSerializer(serializers.ModelSerializer):

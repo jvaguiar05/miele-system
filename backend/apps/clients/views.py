@@ -11,18 +11,16 @@ from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
 from .models import Client, Address
-from common.shared.models import Annotation, AttachedFile
+from common.shared.models import Annotation
 from .serializers import (
     ClientSerializer,
     ClientBasicSerializer,
     ClientSensitiveSerializer,
     AddressSerializer,
     ClientAnnotationSerializer,
-    ClientAttachedFileSerializer,
 )
 from common.shared.permissions import (
     IsOwnerOrAdminForAnnotations,
-    IsOwnerOrAdminForAttachedFiles,
 )
 
 
@@ -662,59 +660,3 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """Excluir anotação."""
         return super().destroy(request, *args, **kwargs)
-
-
-@extend_schema(
-    tags=["Clientes - Arquivos"],
-    summary="Gerenciamento de arquivos anexados a clientes",
-    description="Endpoints para CRUD de arquivos anexados a clientes.",
-)
-class ClientAttachedFileViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para gerenciamento de arquivos anexados a clientes.
-    """
-
-    serializer_class = ClientAttachedFileSerializer
-    lookup_field = "public_id"
-    permission_classes = [IsOwnerOrAdminForAttachedFiles]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["file_type", "uploaded_by_id"]
-    search_fields = ["file_name", "description"]
-    ordering_fields = ["created_at", "file_name"]
-    ordering = ["-created_at"]
-
-    def get_queryset(self):
-        """Filtrar apenas arquivos não excluídos do usuário (ou todos se admin)."""
-        from django.contrib.contenttypes.models import ContentType
-        from common.permissions import IsAdminUser
-
-        client_ct = ContentType.objects.get(app_label="clients", model="client")
-        queryset = AttachedFile.objects.filter(
-            deleted_at__isnull=True, content_type=client_ct
-        )
-
-        # Se não for admin, filtrar apenas arquivos do usuário
-        if not IsAdminUser().has_permission(self.request, self):
-            queryset = queryset.filter(uploaded_by_id=self.request.user.id)
-
-        return queryset
-
-    def get_object(self):
-        """Buscar objeto por public_id."""
-        queryset = self.filter_queryset(self.get_queryset())
-        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-        lookup_value = self.kwargs[lookup_url_kwarg]
-
-        try:
-            obj = queryset.get(**{self.lookup_field: lookup_value})
-        except AttachedFile.DoesNotExist:
-            from django.http import Http404
-
-            raise Http404("Arquivo não encontrado.")
-
-        self.check_object_permissions(self.request, obj)
-        return obj
-
-    def perform_create(self, serializer):
-        """Automaticamente definir o usuário como o uploader."""
-        serializer.save()

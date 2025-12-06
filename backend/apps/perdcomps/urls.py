@@ -2,19 +2,15 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     PerDcompViewSet,
-    PerDcompAttachedFileViewSet,
     PerDcompAnnotationViewSet,
 )
 
 router = DefaultRouter()
 router.register(r"", PerDcompViewSet, basename="perdcomp")
-router.register(
-    r"attached-files", PerDcompAttachedFileViewSet, basename="perdcomp-attached-file"
-)
-# Remove the old annotations route since we'll use a custom path pattern
 
-# Custom path for annotations with perdcomp_id as parameter
+# Custom paths for nested resources
 urlpatterns = [
+    # Annotations with perdcomp_id as parameter
     path(
         "annotations/by-perdcomp/<uuid:perdcomp_id>/",
         PerDcompAnnotationViewSet.as_view({"post": "create", "get": "list"}),
