@@ -12,4 +12,5 @@ urlpatterns = [
     path("perdcomps/", include("apps.perdcomps.urls")),
     path("dashboard/", include("apps.clients.urls_dashboard")),
     path("activities/", include("common.audit.urls")),
+    path("shared/", include("common.shared.urls")),
 ]

@@ -156,10 +156,21 @@ class GoogleDriveService:
             logger.debug(f"Arquivo {file_id} existe no Google Drive")
             return True
 
+        except HttpError as e:
+            if e.resp.status == 404:
+                logger.debug(f"Arquivo {file_id} não encontrado no Google Drive")
+                return False
+            else:
+                # Para outros erros HTTP, tratar como erro real
+                self._handle_api_error(
+                    e, f"Verificando existência do arquivo {file_id}"
+                )
+                return False
         except GoogleDriveFileNotFoundError:
             logger.debug(f"Arquivo {file_id} não encontrado no Google Drive")
             return False
         except Exception as e:
+            logger.error(f"Erro inesperado ao verificar arquivo {file_id}: {e}")
             self._handle_api_error(e, f"Verificando existência do arquivo {file_id}")
             return False
 
