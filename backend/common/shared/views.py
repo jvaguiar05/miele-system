@@ -38,9 +38,15 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
     - Excluir arquivos (apenas se removidos do Google Drive)
 
     **Validações:**
-    - POST/PUT: Arquivo DEVE existir no Google Drive
+    - POST: Arquivo DEVE existir no Google Drive (obrigatório)
+    - PUT/PATCH: Fallback se arquivo não existe no Drive
     - DELETE: Arquivo NÃO DEVE existir no Google Drive
     - Ownership: Usuário deve ter permissão sobre a entidade
+
+    **Fallback Strategy (PUT/PATCH):**
+    - Se drive_file_id não existe no Drive: marca sync_status="error"
+    - Mantém registro no banco para histórico/auditoria
+    - Permite correção posterior pelo usuário
     """
 
     queryset = AttachedFile.objects.all()
@@ -62,7 +68,14 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
         object_id = self.request.query_params.get("object_id")
         if object_id:
             try:
-                entity_queryset = AttachedFileService.get_files_for_entity(object_id)
+                # Verificar se deve incluir arquivos com erro (padrão: true)
+                include_errors = self.request.query_params.get(
+                    "include_errors", "true"
+                ).lower() in ("true", "1", "yes")
+
+                entity_queryset = AttachedFileService.get_files_for_entity(
+                    object_id, include_errors=include_errors
+                )
                 return entity_queryset
             except Exception as e:
                 logger.error(f"Erro ao filtrar por object_id {object_id}: {e}")
@@ -94,6 +107,12 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
                 location=OpenApiParameter.QUERY,
                 required=True,
                 description="Public ID da entidade (Cliente ou PER/DCOMP)",
+            ),
+            OpenApiParameter(
+                "include_errors",
+                OpenApiTypes.BOOL,
+                location=OpenApiParameter.QUERY,
+                description="Incluir arquivos com sync_status='error' (padrão: true)",
             ),
             OpenApiParameter(
                 "search",
@@ -238,12 +257,34 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
             )
         ],
     )
-    def update(self, request, public_id=None):
+    def update(self, request, public_id=None, partial=False):
         """Atualizar arquivo existente."""
         try:
-            return super().update(request, public_id)
+            return super().update(request, public_id, partial=partial)
+        except ValidationError as ve:
+            # ValidationError do DRF (inclui nossas validações do serviço)
+            logger.error(
+                f"Erro de validação ao atualizar arquivo anexado {public_id}: {ve.detail}"
+            )
+            return Response(ve.detail, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            logger.error(f"Erro ao atualizar arquivo anexado {public_id}: {e}")
+            error_message = str(e)
+            logger.error(
+                f"Erro ao atualizar arquivo anexado {public_id}: {error_message}"
+            )
+
+            # Tratar erro de JSON malformado
+            if (
+                "JSON parse error" in error_message
+                or "Illegal trailing comma" in error_message
+            ):
+                return Response(
+                    {
+                        "error": "JSON inválido: verifique se não há vírgulas extras no final dos objetos"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             return Response(
                 {"error": "Erro interno ao processar atualização"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -257,10 +298,30 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
         """Atualizar parcialmente arquivo existente."""
         try:
             return super().partial_update(request, public_id)
-        except Exception as e:
+        except ValidationError as ve:
+            # ValidationError do DRF (inclui nossas validações do serviço)
             logger.error(
-                f"Erro ao atualizar parcialmente arquivo anexado {public_id}: {e}"
+                f"Erro de validação ao atualizar parcialmente arquivo anexado {public_id}: {ve.detail}"
             )
+            return Response(ve.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            error_message = str(e)
+            logger.error(
+                f"Erro ao atualizar parcialmente arquivo anexado {public_id}: {error_message}"
+            )
+
+            # Tratar erro de JSON malformado
+            if (
+                "JSON parse error" in error_message
+                or "Illegal trailing comma" in error_message
+            ):
+                return Response(
+                    {
+                        "error": "JSON inválido: verifique se não há vírgulas extras no final dos objetos"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             return Response(
                 {"error": "Erro interno ao processar atualização"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -304,25 +365,14 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
                 {"error": "Arquivo não encontrado no banco de dados"},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except ValidationError as ve:
+            # ValidationError do DRF (inclui nossas validações do serviço)
+            logger.error(
+                f"Erro de validação ao excluir arquivo anexado {public_id}: {ve.detail}"
+            )
+            return Response(ve.detail, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Erro ao excluir arquivo anexado {public_id}: {e}")
-
-            # Extrair mensagem limpa da ValidationError
-            if "ainda existe no Google Drive" in str(e):
-                # Extrair mensagem do ErrorDetail se for uma ValidationError
-                error_message = str(e)
-                if "ErrorDetail" in error_message and "string=" in error_message:
-                    # Extrair a mensagem entre aspas simples
-                    import re
-
-                    match = re.search(r"string='([^']*)'", error_message)
-                    if match:
-                        error_message = match.group(1)
-
-                return Response(
-                    {"error": error_message}, status=status.HTTP_400_BAD_REQUEST
-                )
-
             return Response(
                 {"error": "Erro interno ao processar exclusão"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

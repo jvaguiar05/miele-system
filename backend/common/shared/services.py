@@ -109,13 +109,16 @@ class AttachedFileService:
         raise DRFValidationError("Entidade não encontrada ou foi removida")
 
     @staticmethod
-    def get_files_for_entity(object_id: str, file_type_filter: str = None):
+    def get_files_for_entity(
+        object_id: str, file_type_filter: str = None, include_errors: bool = True
+    ):
         """
         Busca arquivos por entidade com filtros opcionais.
 
         Args:
             object_id: Public ID da entidade
             file_type_filter: Filtro opcional por tipo de arquivo
+            include_errors: Se True, inclui arquivos com sync_status="error"
 
         Returns:
             QuerySet: Arquivos da entidade
@@ -124,11 +127,19 @@ class AttachedFileService:
             AttachedFileService.resolve_entity_from_public_id(object_id)
         )
 
+        # Base query
         queryset = AttachedFile.objects.filter(
             content_type=content_type,
             object_id=entity.id,
-            sync_status__in=["synced", "pending"],  # Apenas arquivos acessíveis
         ).select_related("content_type")
+
+        # Filtrar por status (incluir ou não arquivos com erro)
+        if include_errors:
+            # Incluir todos os status para visibilidade completa
+            queryset = queryset.filter(sync_status__in=["synced", "pending", "error"])
+        else:
+            # Apenas arquivos acessíveis (comportamento anterior)
+            queryset = queryset.filter(sync_status__in=["synced", "pending"])
 
         if file_type_filter:
             queryset = queryset.filter(file_type__icontains=file_type_filter)
@@ -183,7 +194,6 @@ class AttachedFileService:
         return attached_file
 
     @staticmethod
-    @transaction.atomic
     def update_attached_file(instance, validated_data):
         """
         Atualiza arquivo anexado com validações.
@@ -194,6 +204,9 @@ class AttachedFileService:
 
         Returns:
             AttachedFile: Instância atualizada
+
+        Raises:
+            DRFValidationError: Se arquivo não existe no Drive (preserva dados originais)
         """
         try:
             logger.info(
@@ -208,7 +221,7 @@ class AttachedFileService:
                     f"drive_file_id alterado de {instance.drive_file_id} para {drive_file_id}"
                 )
 
-                # Validar arquivo existe no Drive
+                # Validar arquivo existe no Drive (OBRIGATÓRIO)
                 if not AttachedFileService.validate_drive_file_exists(drive_file_id):
                     raise DRFValidationError(
                         {"drive_file_id": "Arquivo não encontrado no Google Drive"}
@@ -224,21 +237,83 @@ class AttachedFileService:
                         {"drive_file_id": "Este arquivo já está registrado no sistema"}
                     )
 
-            # Atualizar campos
-            for field, value in validated_data.items():
-                logger.info(f"Atualizando campo {field}: {value}")
-                setattr(instance, field, value)
+            # Se não mudou drive_file_id, verificar se arquivo atual ainda existe
+            elif not drive_file_id and instance.sync_status in ["synced", "pending"]:
+                # Verificar se arquivo atual ainda existe no Drive
+                try:
+                    logger.info(
+                        f"Verificando se arquivo atual {instance.drive_file_id} ainda existe no Drive"
+                    )
+                    if not AttachedFileService.validate_drive_file_exists(
+                        instance.drive_file_id
+                    ):
+                        # ERRO: Arquivo foi removido do Drive
+                        # 1. Marcar como erro FORA da transação principal
+                        AttachedFileService._mark_file_as_error(instance.pk)
+                        logger.warning(
+                            f"sync_status alterado para 'error' para arquivo {instance.public_id}"
+                        )
 
-            instance.save()
+                        # 2. Cancelar operação e alertar usuário
+                        raise DRFValidationError(
+                            {
+                                "drive_sync_error": f"Arquivo original foi removido do Google Drive. "
+                                f"Operação cancelada para preservar dados. "
+                                f"Status atualizado para 'error'. "
+                                f"Faça upload de um novo arquivo ou corrija o drive_file_id."
+                            }
+                        )
+                except Exception as e:
+                    if isinstance(e, DRFValidationError):
+                        raise  # Re-raise se for nossa validação
 
-            logger.info(f"Arquivo anexado atualizado: {instance.public_id}")
-            return instance
+                    # Para outros erros de API, também marcar erro e cancelar
+                    logger.error(f"Erro ao verificar arquivo atual: {e}")
+                    AttachedFileService._mark_file_as_error(instance.pk)
+                    logger.warning(
+                        f"sync_status alterado para 'error' devido a erro de API para arquivo {instance.public_id}"
+                    )
+
+                    raise DRFValidationError(
+                        {
+                            "drive_sync_error": f"Erro ao verificar arquivo no Google Drive. "
+                            f"Operação cancelada para preservar dados. "
+                            f"Status atualizado para 'error'. "
+                            f"Verifique a conexão e tente novamente."
+                        }
+                    )
+
+            # Se chegou até aqui, arquivo está OK - aplicar atualizações
+            with transaction.atomic():
+                for field, value in validated_data.items():
+                    logger.info(f"Atualizando campo {field}: {value}")
+                    setattr(instance, field, value)
+
+                instance.save()
+                logger.info(f"Arquivo anexado atualizado: {instance.public_id}")
+                return instance
 
         except Exception as e:
             logger.error(
                 f"Erro detalhado ao atualizar arquivo {instance.public_id}: {type(e).__name__}: {str(e)}"
             )
             raise
+
+    @staticmethod
+    def _mark_file_as_error(file_pk):
+        """
+        Marca arquivo como erro em transação separada.
+
+        Args:
+            file_pk: Primary key do arquivo
+        """
+        from django.db import transaction
+
+        try:
+            with transaction.atomic():
+                AttachedFile.objects.filter(pk=file_pk).update(sync_status="error")
+        except Exception as e:
+            logger.error(f"Erro ao marcar arquivo {file_pk} como error: {e}")
 
     @staticmethod
     @transaction.atomic
