@@ -1,7 +1,7 @@
 import logging
 import io
 from django.conf import settings
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
@@ -12,52 +12,66 @@ logger = logging.getLogger(__name__)
 class GoogleDriveService:
     """
     Serviço de Infraestrutura para Google Drive (Proxy Pattern).
-    Gerencia apenas a comunicação I/O com a API.
+    Usa OAuth 2.0 com Refresh Token para agir como o usuário dono (contornando cota zero).
     """
 
     def __init__(self):
         self.scopes = ["https://www.googleapis.com/auth/drive"]
-        self.credentials_file = getattr(settings, "GDRIVE_SERVICE_ACCOUNT_FILE", None)
         self.service = None
 
-        # Mapping de pastas (definido no settings)
+        # Credenciais OAuth
+        self.client_id = getattr(settings, "GDRIVE_CLIENT_ID", None)
+        self.client_secret = getattr(settings, "GDRIVE_CLIENT_SECRET", None)
+        self.refresh_token = getattr(settings, "GDRIVE_REFRESH_TOKEN", None)
+
         self.folder_map = {
             "client": getattr(settings, "GDRIVE_CLIENTS_FOLDER_ID", None),
             "perdcomp": getattr(settings, "GDRIVE_PERDCOMPS_FOLDER_ID", None),
         }
 
     def _get_service(self):
+        """
+        Constrói o serviço usando o Refresh Token para gerar Access Tokens automaticamente.
+        """
         if not self.service:
-            if not self.credentials_file:
-                raise Exception("GDRIVE_SERVICE_ACCOUNT_FILE não configurado.")
+            if not all([self.client_id, self.client_secret, self.refresh_token]):
+                raise Exception(
+                    "Credenciais OAuth (Client ID, Secret, Refresh Token) não configuradas."
+                )
 
-            creds = service_account.Credentials.from_service_account_file(
-                self.credentials_file, scopes=self.scopes
+            # Monta as credenciais. O Access Token é None porque a lib vai
+            # usar o refresh_token para buscar um novo automaticamente.
+            creds = Credentials(
+                None,
+                refresh_token=self.refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                scopes=self.scopes,
             )
-            self.service = build("drive", "v3", credentials=creds)
+
+            self.service = build(
+                "drive", "v3", credentials=creds, cache_discovery=False
+            )
         return self.service
 
     def upload_stream(
         self, file_obj, filename: str, entity_type: str, mime_type: str
     ) -> str:
         """
-        Recebe um arquivo em memória (InMemoryUploadedFile) e envia para o Drive.
-        Retorna o ID do arquivo no Drive.
+        Faz upload agindo como o usuário autenticado via OAuth.
         """
         service = self._get_service()
 
-        # Determinar pasta destino
         parent_id = self.folder_map.get(entity_type)
         if not parent_id:
             logger.warning(f"Pasta não configurada para {entity_type}, usando raiz.")
-            # Se não tiver pasta configurada, vai para a raiz do Drive do robô
             parent_id = None
 
         file_metadata = {"name": filename}
         if parent_id:
             file_metadata["parents"] = [parent_id]
 
-        # Configura o upload via stream usando o mime_type passado explicitamente
         media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
 
         try:
@@ -66,16 +80,12 @@ class GoogleDriveService:
                 .create(body=file_metadata, media_body=media, fields="id")
                 .execute()
             )
-
             return file.get("id")
         except HttpError as e:
-            logger.error(f"Erro de I/O no Google Drive: {e}")
+            logger.error(f"Erro de I/O no Google Drive (OAuth): {e}")
             raise
 
     def download_stream(self, file_id: str) -> io.BytesIO:
-        """
-        Baixa o arquivo do Drive para um buffer em memória.
-        """
         service = self._get_service()
         try:
             request = service.files().get_media(fileId=file_id)
@@ -93,13 +103,12 @@ class GoogleDriveService:
             raise
 
     def delete_file(self, file_id: str):
-        """Remove o arquivo do Drive."""
         service = self._get_service()
         try:
             service.files().delete(fileId=file_id).execute()
         except HttpError as e:
             if e.resp.status == 404:
-                return  # Já não existe, tudo bem
+                return
             raise
 
 
