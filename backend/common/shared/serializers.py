@@ -109,3 +109,126 @@ class AnnotationBasicSerializer(serializers.ModelSerializer):
         model = Annotation
         fields = ["id", "user_name", "content", "created_at"]
         read_only_fields = ["id", "user_name", "created_at"]
+
+
+class AttachedFileListSerializer(serializers.ModelSerializer):
+    """Para GET (Leitura)"""
+
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    uploaded_by_name = serializers.CharField(
+        source="uploaded_by.username", read_only=True
+    )
+    file_size_human = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = AttachedFile
+        fields = [
+            "id",
+            "file_name",
+            "file_type",
+            "file_size",
+            "file_size_human",
+            "uploaded_by_name",
+            "created_at",
+        ]
+
+
+from rest_framework import serializers
+from .models import AttachedFile, get_file_type_choices
+from .utils import resolve_entity
+
+
+class AttachedFileListSerializer(serializers.ModelSerializer):
+    """Para GET (Leitura) - Retorna dados formatados."""
+
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    uploaded_by_name = serializers.CharField(
+        source="uploaded_by.username", read_only=True, default="Sistema"
+    )
+    file_size_human = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = AttachedFile
+        fields = [
+            "id",
+            "file_name",
+            "file_type",
+            "mime_type",
+            "file_size",
+            "file_size_human",
+            "uploaded_by_name",
+            "created_at",
+            "description",
+        ]
+
+
+class AttachedFileCreateSerializer(serializers.Serializer):
+    """
+    Para POST (Upload).
+    Realiza a validação de negócio (Tipo de Arquivo vs Entidade)
+    antes de tocar no Google Drive.
+    """
+
+    object_id = serializers.UUIDField(help_text="UUID da Entidade (Client/Perdcomp)")
+    file_type = serializers.CharField(
+        help_text="Código do tipo de arquivo (ex: contrato, recibo)"
+    )
+    description = serializers.CharField(required=False, allow_blank=True)
+    file = serializers.FileField(write_only=True)
+
+    def validate_file_type(self, value):
+        return value.lower()
+
+    def validate(self, attrs):
+        """
+        Validação Cruzada: Verifica se o file_type é válido para a entidade encontrada.
+        """
+        object_uuid = attrs.get("object_id")
+        input_type = attrs.get("file_type")
+
+        # 1. Resolver Entidade (Client ou PerDcomp)
+        entity, entity_type = resolve_entity(object_uuid)
+
+        if not entity:
+            raise serializers.ValidationError(
+                {"object_id": "Entidade não encontrada no sistema."}
+            )
+
+        # 2. Buscar regras de negócio (Tipos permitidos para esta entidade)
+        # Retorna lista de tuplas, ex: [('contrato', 'Contrato'), ...]
+        valid_choices = get_file_type_choices(entity_type)
+        valid_keys = [choice[0] for choice in valid_choices]
+
+        # 3. Validar se o tipo enviado é permitido
+        if input_type not in valid_keys:
+            raise serializers.ValidationError(
+                {
+                    "file_type": f"Tipo '{input_type}' inválido para {entity_type}. Opções válidas: {valid_keys}"
+                }
+            )
+
+        # OTIMIZAÇÃO: Injetamos o tipo resolvido para a View não precisar buscar de novo
+        attrs["resolved_entity_type"] = entity_type
+
+        return attrs
+
+
+class AttachedFileUpdateSerializer(serializers.ModelSerializer):
+    """Para PATCH (atualização apenas de metadados, não do arquivo em si)."""
+
+    description = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = AttachedFile
+        fields = ["description"]  # Apenas descrição é editável
+        # Nota: read_only_fields não é necessário se listarmos apenas description em fields,
+        # mas mantemos aqui para documentação explícita do que NÃO muda.
+        read_only_fields = [
+            "id",
+            "file_name",
+            "file_type",
+            "file_size",
+            "uploaded_by",
+            "created_at",
+            "drive_file_id",
+        ]

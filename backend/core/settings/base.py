@@ -212,6 +212,10 @@ SPECTACULAR_SETTINGS = {
             "name": "PER/DCOMPs - Anotações",
             "description": "Endpoints relacionados às anotações dos PER/DCOMPs",
         },
+        {
+            "name": "Google Drive Integration - Proxy",
+            "description": "Endpoints para upload, download e gerenciamento de arquivos anexados",
+        },
     ],
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
