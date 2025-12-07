@@ -33,7 +33,6 @@ class Annotation(models.Model):
     class Meta:
         db_table = "common_annotations"
         ordering = ["-created_at"]
-        # Removed unique constraint to allow multiple annotations per user per entity
         indexes = [
             models.Index(fields=["content_type", "object_id"]),
             models.Index(fields=["user_id"]),
@@ -61,7 +60,10 @@ class Annotation(models.Model):
 
 
 class AttachedFile(models.Model):
-    """Modelo compartilhado para arquivos anexados a qualquer entidade."""
+    """
+    Modelo compartilhado para arquivos anexados a qualquer entidade.
+    Os arquivos são armazenados no Google Drive via Backend Proxy.
+    """
 
     # Não auditar arquivos anexos (são apenas agregados)
     __audit__ = False
@@ -91,12 +93,11 @@ class AttachedFile(models.Model):
 
     # Descrição opcional do arquivo
     description = models.TextField(
-        blank=True,
-        null=True,
-        help_text="Descrição opcional do arquivo"
+        blank=True, null=True, help_text="Descrição opcional do arquivo"
     )
 
-    # Controle de qualidade (opcional mas útil para UX)
+    # Controle de qualidade
+    # Na abordagem Proxy, 'pending' é menos usado, mas mantemos para compatibilidade
     sync_status = models.CharField(
         max_length=20,
         choices=[
@@ -119,13 +120,11 @@ class AttachedFile(models.Model):
         db_table = "common_attached_files"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(
-                fields=["content_type", "object_id"]
-            ),  # Buscar arquivos por entidade
-            models.Index(fields=["drive_file_id"]),  # Buscar por ID do Drive
-            models.Index(fields=["file_type"]),  # Filtrar por tipo
-            models.Index(fields=["uploaded_by_id"]),  # Filtrar por usuário
-            models.Index(fields=["sync_status"]),  # Filtrar por status
+            models.Index(fields=["content_type", "object_id"]),
+            models.Index(fields=["drive_file_id"]),
+            models.Index(fields=["file_type"]),
+            models.Index(fields=["uploaded_by_id"]),
+            models.Index(fields=["sync_status"]),
         ]
 
     def __str__(self):
@@ -141,39 +140,6 @@ class AttachedFile(models.Model):
             return User.objects.get(id=self.uploaded_by_id)
         except User.DoesNotExist:
             return None
-
-    @property
-    def is_accessible(self):
-        """Verifica se arquivo está acessível no Google Drive."""
-        return self.sync_status == "synced"
-
-    def mark_sync_error(self):
-        """Marca arquivo com erro de sincronização."""
-        self.sync_status = "error"
-        self.save(update_fields=["sync_status"])
-
-    @property
-    def download_url(self):
-        """URL de download direto gerada dinamicamente."""
-        return f"https://drive.google.com/uc?id={self.drive_file_id}&export=download"
-
-    @property
-    def preview_url(self):
-        """URL para preview no navegador gerada dinamicamente."""
-        return f"https://drive.google.com/file/d/{self.drive_file_id}/view"
-
-    @property
-    def file_size_human(self):
-        """Retorna o tamanho do arquivo em formato legível."""
-        size = self.file_size
-        if size < 1024:
-            return f"{size} B"
-        elif size < 1024 * 1024:
-            return f"{size / 1024:.1f} KB"
-        elif size < 1024 * 1024 * 1024:
-            return f"{size / (1024 * 1024):.1f} MB"
-        else:
-            return f"{size / (1024 * 1024 * 1024):.1f} GB"
 
     @property
     def file_size_human(self):

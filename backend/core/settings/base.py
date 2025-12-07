@@ -212,10 +212,6 @@ SPECTACULAR_SETTINGS = {
             "name": "PER/DCOMPs - Anotações",
             "description": "Endpoints relacionados às anotações dos PER/DCOMPs",
         },
-        {
-            "name": "Google Drive - Arquivos",
-            "description": "Endpoints relacionados ao gerenciamento de arquivos no Google Drive",
-        }
     ],
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
