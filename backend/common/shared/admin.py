@@ -63,12 +63,13 @@ class AttachedFileAdmin(admin.ModelAdmin):
         "file_name",
         "get_uploaded_by_display",
         "file_type",
+        "mime_type",
         "file_size_human",
-        "sync_status",
         "content_type",
         "created_at",
     ]
-    list_filter = ["file_type", "content_type", "sync_status", "created_at"]
+    # "sync_status" removido do list_filter
+    list_filter = ["file_type", "content_type", "created_at"]
     search_fields = ["file_name", "drive_file_id", "uploaded_by_id"]
     readonly_fields = ["public_id", "file_size_human", "created_at"]
 
@@ -80,6 +81,7 @@ class AttachedFileAdmin(admin.ModelAdmin):
                     "public_id",
                     "file_name",
                     "file_type",
+                    "mime_type",
                     "file_size",
                     "file_size_human",
                 ),
@@ -88,7 +90,7 @@ class AttachedFileAdmin(admin.ModelAdmin):
         (
             "Google Drive",
             {
-                "fields": ("drive_file_id", "sync_status"),
+                "fields": ("drive_file_id",),
             },
         ),
         (
@@ -148,7 +150,6 @@ class AttachedFileInline(GenericTabularInline):
         "file_type",
         "drive_file_id",
         "file_size",
-        "sync_status",
         "uploaded_by_id",
         "created_at",
     ]

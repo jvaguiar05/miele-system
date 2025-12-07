@@ -1,387 +1,266 @@
-"""
-ViewSets genéricos para módulos compartilhados.
-"""
-
 import logging
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, parsers
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import ValidationError
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.filters import SearchFilter, OrderingFilter
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
-from drf_spectacular.openapi import OpenApiTypes
-from django.http import Http404
+from django.http import FileResponse
+from django.db import transaction
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 
 from .models import AttachedFile
 from .serializers import (
     AttachedFileListSerializer,
-    AttachedFileDetailSerializer,
     AttachedFileCreateSerializer,
     AttachedFileUpdateSerializer,
 )
-from .services import AttachedFileService
-from .permissions import IsOwnerOrAdminForAttachedFiles
+from common.services.google_drive import drive_service
+from .utils import resolve_entity
 
 logger = logging.getLogger(__name__)
 
 
-@extend_schema(tags=["Google Drive - Arquivos"])
+@extend_schema(
+    tags=["Google Drive Integration - Proxy"],
+    summary="Gerenciamento de Arquivos",
+    description="""
+    API para gerenciamento centralizado de arquivos anexados a entidades (Clientes e PER/DCOMPs).
+    
+    **Arquitetura Proxy:**
+    - O Frontend envia o arquivo para esta API.
+    - Esta API valida as regras de negócio e faz o upload síncrono para o Google Drive (Service Account).
+    - O Frontend baixa o arquivo através desta API, sem acesso direto ao Google Drive.
+    """,
+)
 class AttachedFileViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet genérico para gestão de arquivos anexados.
-
-    **Funcionalidades:**
-    - Listar arquivos por entidade (Cliente ou PER/DCOMP)
-    - Criar novos arquivos anexados
-    - Atualizar informações de arquivos
-    - Excluir arquivos (apenas se removidos do Google Drive)
-
-    **Validações:**
-    - POST: Arquivo DEVE existir no Google Drive (obrigatório)
-    - PUT/PATCH: Fallback se arquivo não existe no Drive
-    - DELETE: Arquivo NÃO DEVE existir no Google Drive
-    - Ownership: Usuário deve ter permissão sobre a entidade
-
-    **Fallback Strategy (PUT/PATCH):**
-    - Se drive_file_id não existe no Drive: marca sync_status="error"
-    - Mantém registro no banco para histórico/auditoria
-    - Permite correção posterior pelo usuário
-    """
-
     queryset = AttachedFile.objects.all()
-    permission_classes = [IsAuthenticated, IsOwnerOrAdminForAttachedFiles]
     lookup_field = "public_id"
     lookup_url_kwarg = "public_id"
-
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["file_type", "sync_status"]
-    search_fields = ["file_name", "description"]
-    ordering_fields = ["created_at", "file_name", "file_size"]
-    ordering = ["-created_at"]
-
-    def get_queryset(self):
-        """Filtrar arquivos com base nos parâmetros da query."""
-        queryset = super().get_queryset()
-
-        # Filtrar por object_id se fornecido
-        object_id = self.request.query_params.get("object_id")
-        if object_id:
-            try:
-                # Verificar se deve incluir arquivos com erro (padrão: true)
-                include_errors = self.request.query_params.get(
-                    "include_errors", "true"
-                ).lower() in ("true", "1", "yes")
-
-                entity_queryset = AttachedFileService.get_files_for_entity(
-                    object_id, include_errors=include_errors
-                )
-                return entity_queryset
-            except Exception as e:
-                logger.error(f"Erro ao filtrar por object_id {object_id}: {e}")
-                return queryset.none()
-
-        # Se não há object_id, retornar apenas arquivos do usuário (se não for admin)
-        if not self.request.user.is_staff:
-            queryset = queryset.filter(uploaded_by_id=self.request.user.id)
-
-        return queryset.select_related("content_type")
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+    permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
-        """Retorna serializer apropriado por ação."""
-        if self.action == "list":
-            return AttachedFileListSerializer
-        elif self.action == "create":
+        if self.action == "create":
             return AttachedFileCreateSerializer
-        elif self.action in ["update", "partial_update"]:
+        if self.action in ["update", "partial_update"]:
             return AttachedFileUpdateSerializer
-        return AttachedFileDetailSerializer
+        return AttachedFileListSerializer
 
     @extend_schema(
-        summary="Listar arquivos anexados",
-        description="Lista arquivos anexados filtrados por entidade (Cliente ou PER/DCOMP)",
+        summary="Listar arquivos de uma entidade",
+        description="Retorna a lista de todos os arquivos anexados a um Cliente ou PER/DCOMP específico.",
         parameters=[
             OpenApiParameter(
-                "object_id",
-                OpenApiTypes.UUID,
-                location=OpenApiParameter.QUERY,
+                name="object_id",
+                description="UUID da entidade (Cliente ou PerDcomp) para filtrar os arquivos.",
                 required=True,
-                description="Public ID da entidade (Cliente ou PER/DCOMP)",
-            ),
-            OpenApiParameter(
-                "include_errors",
-                OpenApiTypes.BOOL,
+                type=OpenApiTypes.UUID,
                 location=OpenApiParameter.QUERY,
-                description="Incluir arquivos com sync_status='error' (padrão: true)",
-            ),
-            OpenApiParameter(
-                "search",
-                OpenApiTypes.STR,
-                location=OpenApiParameter.QUERY,
-                description="Buscar por nome ou descrição do arquivo",
-            ),
-            OpenApiParameter(
-                "file_type",
-                OpenApiTypes.STR,
-                location=OpenApiParameter.QUERY,
-                description="Filtrar por tipo de arquivo",
-            ),
-        ],
-        examples=[
-            OpenApiExample(
-                "Arquivos de cliente",
-                summary="Listar arquivos de um cliente",
-                description="Exemplo de listagem de arquivos anexados a um cliente específico",
-                value={
-                    "count": 2,
-                    "next": None,
-                    "previous": None,
-                    "results": [
-                        {
-                            "id": "123e4567-e89b-12d3-a456-426614174000",
-                            "file_name": "Contrato_ABC_2024.pdf",
-                            "file_type": "contrato",
-                            "drive_file_id": "1FAKE_ID_FOR_TESTING_DELETE_123456789ABC",
-                            "file_size": 1024000,
-                            "file_size_human": "1.0 MB",
-                            "entity_type": "client",
-                            "entity_name": "Empresa ABC Ltda",
-                            "uploaded_by_name": "joao.silva",
-                            "sync_status": "synced",
-                            "created_at": "2024-12-06T10:00:00Z",
-                        }
-                    ],
-                },
             )
         ],
+        responses={
+            200: AttachedFileListSerializer(many=True),
+            400: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
     )
-    def list(self, request):
-        """Listar arquivos por entidade."""
+    def list(self, request, *args, **kwargs):
         object_id = request.query_params.get("object_id")
+
         if not object_id:
             return Response(
-                {"error": "object_id é obrigatório para listar arquivos"},
+                {
+                    "error": "Parâmetro 'object_id' (UUID) é obrigatório na query string."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return super().list(request)
+        entity, entity_type = resolve_entity(object_id)
 
-    @extend_schema(
-        summary="Criar arquivo anexado",
-        description="Cria novo arquivo anexado com validação de existência no Google Drive",
-        examples=[
-            OpenApiExample(
-                "Criar arquivo de contrato",
-                summary="Anexar contrato a cliente",
-                description="Exemplo de criação de arquivo anexado",
-                value={
-                    "object_id": "123e4567-e89b-12d3-a456-426614174000",
-                    "file_type": "contrato",
-                    "file_name": "Contrato_ABC_2024.pdf",
-                    "drive_file_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890123",
-                    "file_size": 1024000,
-                    "description": "Contrato de prestação de serviços assinado em 2024",
-                },
-            )
-        ],
-    )
-    def create(self, request):
-        """Criar novo arquivo anexado."""
-        try:
-            return super().create(request)
-        except ValidationError as e:
-            logger.error(f"Erro de validação ao criar arquivo: {e}")
-
-            # Tratar erros de validação específicos
-            if hasattr(e, "detail") and isinstance(e.detail, dict):
-                # Extrair mensagens limpas dos ErrorDetails
-                clean_errors = {}
-                for field, errors in e.detail.items():
-                    if isinstance(errors, list) and len(errors) > 0:
-                        error_msg = str(errors[0])
-                        # Extrair mensagem do ErrorDetail se necessário
-                        if "ErrorDetail" in error_msg and "string=" in error_msg:
-                            import re
-
-                            match = re.search(r"string='([^']*)'", error_msg)
-                            if match:
-                                error_msg = match.group(1)
-                        clean_errors[field] = error_msg
-                    else:
-                        clean_errors[field] = str(errors)
-
-                return Response(clean_errors, status=status.HTTP_400_BAD_REQUEST)
-
-            # Para erros gerais (não por campo)
-            error_message = str(e)
-            if "ErrorDetail" in error_message and "string=" in error_message:
-                import re
-
-                match = re.search(r"string='([^']*)'", error_message)
-                if match:
-                    error_message = match.group(1)
-
+        if not entity:
             return Response(
-                {"error": error_message},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        except Exception as e:
-            logger.error(f"Erro ao criar arquivo anexado: {e}")
-
-            # Verificar se é erro de entidade não encontrada
-            if "não encontrado" in str(e).lower():
-                return Response(
-                    {"error": "Entidade não encontrada para o object_id fornecido"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            return Response(
-                {"error": "Erro interno ao processar arquivo"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    @extend_schema(
-        summary="Atualizar arquivo anexado",
-        description="Atualiza informações do arquivo com validação do Google Drive",
-        examples=[
-            OpenApiExample(
-                "Atualizar arquivo",
-                summary="Atualizar dados do arquivo",
-                description="Exemplo de atualização de arquivo anexado",
-                value={
-                    "file_type": "contrato",
-                    "file_name": "Contrato_ABC_2024_Revisado.pdf",
-                    "drive_file_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890123",
-                    "description": "Contrato revisado com novas cláusulas",
-                },
-            )
-        ],
-    )
-    def update(self, request, public_id=None, partial=False):
-        """Atualizar arquivo existente."""
-        try:
-            return super().update(request, public_id, partial=partial)
-        except ValidationError as ve:
-            # ValidationError do DRF (inclui nossas validações do serviço)
-            logger.error(
-                f"Erro de validação ao atualizar arquivo anexado {public_id}: {ve.detail}"
-            )
-            return Response(ve.detail, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            error_message = str(e)
-            logger.error(
-                f"Erro ao atualizar arquivo anexado {public_id}: {error_message}"
-            )
-
-            # Tratar erro de JSON malformado
-            if (
-                "JSON parse error" in error_message
-                or "Illegal trailing comma" in error_message
-            ):
-                return Response(
-                    {
-                        "error": "JSON inválido: verifique se não há vírgulas extras no final dos objetos"
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            return Response(
-                {"error": "Erro interno ao processar atualização"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    @extend_schema(
-        summary="Atualizar parcialmente arquivo anexado",
-        description="Atualização parcial com validação do Google Drive",
-    )
-    def partial_update(self, request, public_id=None):
-        """Atualizar parcialmente arquivo existente."""
-        try:
-            return super().partial_update(request, public_id)
-        except ValidationError as ve:
-            # ValidationError do DRF (inclui nossas validações do serviço)
-            logger.error(
-                f"Erro de validação ao atualizar parcialmente arquivo anexado {public_id}: {ve.detail}"
-            )
-            return Response(ve.detail, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            error_message = str(e)
-            logger.error(
-                f"Erro ao atualizar parcialmente arquivo anexado {public_id}: {error_message}"
-            )
-
-            # Tratar erro de JSON malformado
-            if (
-                "JSON parse error" in error_message
-                or "Illegal trailing comma" in error_message
-            ):
-                return Response(
-                    {
-                        "error": "JSON inválido: verifique se não há vírgulas extras no final dos objetos"
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            return Response(
-                {"error": "Erro interno ao processar atualização"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    @extend_schema(
-        summary="Excluir arquivo anexado",
-        description="""
-        Exclui arquivo anexado apenas se ele NÃO existir mais no Google Drive.
-        
-        **Importante:** Esta operação só é permitida quando o arquivo foi 
-        removido do Google Drive externamente. Caso contrário, retornará erro.
-        """,
-        examples=[
-            OpenApiExample(
-                "Erro - Arquivo ainda existe",
-                summary="Tentativa de exclusão com arquivo ainda no Drive",
-                description="Resposta quando arquivo ainda existe no Google Drive",
-                value={
-                    "error": "Não é possível excluir: arquivo ainda existe no Google Drive"
-                },
-                response_only=True,
-                status_codes=[400],
-            )
-        ],
-    )
-    def destroy(self, request, public_id=None):
-        """Excluir arquivo (apenas se não existir no Google Drive)."""
-        try:
-            instance = self.get_object()
-            AttachedFileService.delete_attached_file(instance)
-
-            logger.info(f"Arquivo anexado {public_id} removido com sucesso")
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        except Http404:
-            logger.warning(
-                f"Tentativa de deletar arquivo anexado inexistente: {public_id}"
-            )
-            return Response(
-                {"error": "Arquivo não encontrado no banco de dados"},
+                {"error": "Entidade não encontrada com o UUID fornecido."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except ValidationError as ve:
-            # ValidationError do DRF (inclui nossas validações do serviço)
-            logger.error(
-                f"Erro de validação ao excluir arquivo anexado {public_id}: {ve.detail}"
+
+        files = AttachedFile.objects.filter(
+            object_id=entity.id,
+            content_type__model=entity_type,
+        )
+
+        serializer = self.get_serializer(files, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Fazer upload de um novo arquivo",
+        description="""
+        Recebe um arquivo binário e seus metadados via `multipart/form-data`.
+        Realiza upload síncrono para o Google Drive e salva referência no banco.
+        
+        **Validações:**
+        - O `object_id` deve existir.
+        - O `file_type` deve ser válido para o tipo de entidade (ex: 'contrato' para Clientes).
+        """,
+        request={"multipart/form-data": AttachedFileCreateSerializer},
+        responses={
+            201: AttachedFileListSerializer,
+            400: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+            502: OpenApiTypes.OBJECT,
+        },
+    )
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        file_obj = serializer.validated_data["file"]
+        object_uuid = serializer.validated_data["object_id"]
+        file_type = serializer.validated_data["file_type"]
+        description = serializer.validated_data.get("description", "")
+
+        # O serializer já resolveu o tipo, tentamos reusar
+        entity_type = serializer.validated_data.get("resolved_entity_type")
+
+        # Fallback de segurança se o serializer não injetou
+        entity = None
+        if not entity_type:
+            entity, entity_type = resolve_entity(object_uuid)
+            if not entity:
+                return Response({"error": "Entidade não encontrada."}, status=404)
+        else:
+            # Precisamos da instância para o content_object
+            entity, _ = resolve_entity(object_uuid)
+
+        logger.info(f"Iniciando upload proxy para {entity_type} {object_uuid}")
+
+        mime_type = getattr(file_obj, "content_type", "application/octet-stream")
+
+        try:
+            # 1. Upload para Drive (Proxy)
+            drive_id = drive_service.upload_stream(
+                file_obj,
+                filename=file_obj.name,
+                entity_type=entity_type,
+                mime_type=mime_type,
             )
-            return Response(ve.detail, status=status.HTTP_400_BAD_REQUEST)
+
+            # 2. Salvar no Banco
+            attached_file = AttachedFile.objects.create(
+                content_object=entity,
+                uploaded_by_id=request.user.id,
+                file_name=file_obj.name,
+                file_size=file_obj.size,
+                file_type=file_type,
+                mime_type=mime_type,
+                drive_file_id=drive_id,
+                description=description,
+            )
+
+            response_serializer = AttachedFileListSerializer(attached_file)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
         except Exception as e:
-            logger.error(f"Erro ao excluir arquivo anexado {public_id}: {e}")
+            logger.error(f"Erro crítico no upload: {e}")
             return Response(
-                {"error": "Erro interno ao processar exclusão"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                {
+                    "error": "Falha na comunicação com o provedor de armazenamento (Google Drive)."
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
             )
 
     @extend_schema(
-        summary="Obter detalhes do arquivo",
-        description="Retorna informações detalhadas do arquivo anexado",
+        summary="Baixar arquivo (Download Proxy)",
+        description="""
+        Faz o streaming do arquivo diretamente do Google Drive para o navegador do usuário.
+        Retorna o arquivo com o `Content-Type` original para correta visualização ou download.
+        """,
+        responses={
+            200: OpenApiTypes.BINARY,
+            404: OpenApiTypes.OBJECT,
+        },
     )
-    def retrieve(self, request, public_id=None):
-        """Obter detalhes de um arquivo específico."""
-        return super().retrieve(request, public_id)
+    @action(detail=True, methods=["get"])
+    def download(self, request, public_id=None):
+        instance = self.get_object()
+
+        try:
+            file_stream = drive_service.download_stream(instance.drive_file_id)
+
+            response = FileResponse(
+                file_stream,
+                as_attachment=True,
+                filename=instance.file_name,
+                content_type=instance.mime_type,
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"Erro ao baixar arquivo {public_id}: {e}")
+            return Response(
+                {"error": "Arquivo indisponível ou corrompido no provedor de nuvem."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    @extend_schema(
+        summary="Remover arquivo permanentemente",
+        description="""
+        Remove o registro do banco de dados E apaga o arquivo físico no Google Drive.
+        Esta ação é irreversível.
+        """,
+        responses={
+            204: None,
+            404: OpenApiTypes.OBJECT,
+        },
+    )
+    def destroy(self, request, *args, **kwargs):
+        # A lógica de deleção física foi movida para signals.py para garantir consistência
+        # Aqui apenas chamamos o delete padrão do DRF, que aciona o signal.
+        return super().destroy(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Atualizar metadados do arquivo",
+        description="Atualiza apenas campos informativos (ex: descrição). Não permite trocar o arquivo físico.",
+        responses={
+            200: AttachedFileListSerializer,
+        },
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @extend_schema(exclude=True)
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Visualizar arquivo (Inline Preview)",
+        description="""
+        Semelhante ao download, mas instrui o navegador a tentar renderizar o arquivo 
+        na própria aba (ex: abrir PDF, exibir Imagem) em vez de forçar o 'Salvar como'.
+        Retorna header `Content-Disposition: inline`.
+        """,
+        responses={
+            200: OpenApiTypes.BINARY,
+            404: OpenApiTypes.OBJECT,
+        },
+    )
+    @action(detail=True, methods=["get"])
+    def preview(self, request, public_id=None):
+        instance = self.get_object()
+
+        try:
+            file_stream = drive_service.download_stream(instance.drive_file_id)
+
+            response = FileResponse(
+                file_stream,
+                as_attachment=False,
+                filename=instance.file_name,
+                content_type=instance.mime_type,
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"Erro ao gerar preview do arquivo {public_id}: {e}")
+            return Response(
+                {"error": "Arquivo indisponível para visualização."},
+                status=status.HTTP_404_NOT_FOUND,
+            )

@@ -213,9 +213,9 @@ SPECTACULAR_SETTINGS = {
             "description": "Endpoints relacionados às anotações dos PER/DCOMPs",
         },
         {
-            "name": "Google Drive - Arquivos",
-            "description": "Endpoints relacionados ao gerenciamento de arquivos no Google Drive",
-        }
+            "name": "Google Drive Integration - Proxy",
+            "description": "Endpoints para upload, download e gerenciamento de arquivos anexados",
+        },
     ],
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
@@ -392,15 +392,16 @@ JAZZMIN_UI_TWEAKS = {
 }
 
 # ==============================================================================
-# GOOGLE DRIVE INTEGRATION SETTINGS
+# GOOGLE DRIVE INTEGRATION SETTINGS (OAUTH 2.0)
 # ==============================================================================
 
-# Google Drive API Configuration
-GDRIVE_SERVICE_ACCOUNT_FILE = env("GDRIVE_SERVICE_ACCOUNT_FILE", default=None, cast=str)
+# OAuth Configuration (Substitui Service Account)
+GDRIVE_CLIENT_ID = env("GDRIVE_CLIENT_ID", default=None, cast=str)
+GDRIVE_CLIENT_SECRET = env("GDRIVE_CLIENT_SECRET", default=None, cast=str)
+GDRIVE_REFRESH_TOKEN = env("GDRIVE_REFRESH_TOKEN", default=None, cast=str)
 
 # Folder structure in Google Drive
 GDRIVE_CLIENTS_FOLDER_ID = env("GDRIVE_CLIENTS_FOLDER_ID", default=None, cast=str)
-
 GDRIVE_PERDCOMPS_FOLDER_ID = env("GDRIVE_PERDCOMPS_FOLDER_ID", default=None, cast=str)
 
 # File size limits and timeouts
@@ -411,11 +412,4 @@ GDRIVE_MAX_FILE_SIZE = env(
 GDRIVE_API_TIMEOUT = env("GDRIVE_API_TIMEOUT", default=30, cast=int)  # seconds
 
 # Rate limiting for Google Drive API
-GDRIVE_REQUESTS_PER_MINUTE = env(
-    "GDRIVE_REQUESTS_PER_MINUTE", default=600, cast=int  # Conservative limit
-)
-
-# Sync verification schedule (hours)
-GDRIVE_SYNC_VERIFICATION_INTERVAL = env(
-    "GDRIVE_SYNC_VERIFICATION_INTERVAL", default=24, cast=int  # Check every 24 hours
-)
+GDRIVE_REQUESTS_PER_MINUTE = env("GDRIVE_REQUESTS_PER_MINUTE", default=600, cast=int)
