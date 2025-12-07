@@ -214,19 +214,30 @@ class AttachedFileCreateSerializer(serializers.Serializer):
 
 
 class AttachedFileUpdateSerializer(serializers.ModelSerializer):
-    """Para PATCH (atualização apenas de metadados, não do arquivo em si)."""
+    """
+    Para PATCH/PUT via Proxy.
+    Permite:
+    1. Alterar descrição.
+    2. Renomear arquivo (file_name).
+    3. Substituir o arquivo físico (file) mantendo o ID.
+    """
 
     description = serializers.CharField(required=False, allow_blank=True)
+    file_name = serializers.CharField(
+        required=False, help_text="Novo nome para o arquivo"
+    )
+    file = serializers.FileField(
+        required=False,
+        write_only=True,
+        help_text="Novo binário para substituir o atual",
+    )
 
     class Meta:
         model = AttachedFile
-        fields = ["description"]  # Apenas descrição é editável
-        # Nota: read_only_fields não é necessário se listarmos apenas description em fields,
-        # mas mantemos aqui para documentação explícita do que NÃO muda.
+        fields = ["description", "file_name", "file"]  # Campos que o front pode enviar
         read_only_fields = [
             "id",
-            "file_name",
-            "file_type",
+            "file_type",  # Geralmente não deixamos mudar o tipo (ex: de Contrato para Recibo) num update
             "file_size",
             "uploaded_by",
             "created_at",

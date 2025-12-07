@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
     API para gerenciamento centralizado de arquivos anexados a entidades (Clientes e PER/DCOMPs).
     
     **Arquitetura Proxy:**
-    - O Frontend envia o arquivo para esta API.
-    - Esta API valida as regras de negócio e faz o upload síncrono para o Google Drive (Service Account).
-    - O Frontend baixa o arquivo através desta API, sem acesso direto ao Google Drive.
+    - O Frontend envia/recebe o arquivo através desta API.
+    - Esta API valida regras de negócio e faz o streaming para o Google Drive (OAuth 2.0).
+    - Nenhum link direto do Google é exposto ao usuário final.
     """,
 )
 class AttachedFileViewSet(viewsets.ModelViewSet):
@@ -95,10 +95,6 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
         description="""
         Recebe um arquivo binário e seus metadados via `multipart/form-data`.
         Realiza upload síncrono para o Google Drive e salva referência no banco.
-        
-        **Validações:**
-        - O `object_id` deve existir.
-        - O `file_type` deve ser válido para o tipo de entidade (ex: 'contrato' para Clientes).
         """,
         request={"multipart/form-data": AttachedFileCreateSerializer},
         responses={
@@ -118,17 +114,16 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
         file_type = serializer.validated_data["file_type"]
         description = serializer.validated_data.get("description", "")
 
-        # O serializer já resolveu o tipo, tentamos reusar
+        # Tenta pegar o tipo resolvido pelo serializer
         entity_type = serializer.validated_data.get("resolved_entity_type")
 
-        # Fallback de segurança se o serializer não injetou
+        # Fallback de segurança
         entity = None
         if not entity_type:
             entity, entity_type = resolve_entity(object_uuid)
             if not entity:
                 return Response({"error": "Entidade não encontrada."}, status=404)
         else:
-            # Precisamos da instância para o content_object
             entity, _ = resolve_entity(object_uuid)
 
         logger.info(f"Iniciando upload proxy para {entity_type} {object_uuid}")
@@ -169,13 +164,91 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
             )
 
     @extend_schema(
+        summary="Atualizar arquivo ou metadados",
+        description="""
+        Permite atualizar a descrição, renomear o arquivo ou **substituir o arquivo físico**.
+        
+        - Se enviar `file_name`: Renomeia no banco e no Drive.
+        - Se enviar `file`: Substitui o conteúdo no Drive e atualiza tamanho/mime_type no banco.
+        - Se enviar `description`: Atualiza apenas no banco.
+        """,
+        request={"multipart/form-data": AttachedFileUpdateSerializer},
+        responses={200: AttachedFileListSerializer},
+    )
+    @transaction.atomic
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        # Dados recebidos
+        new_file = serializer.validated_data.get("file")
+        new_name = serializer.validated_data.get("file_name")
+        description = serializer.validated_data.get("description")
+
+        updates_made = False
+
+        try:
+            # Se tiver novo arquivo ou novo nome, precisamos chamar o Drive
+            if new_file or new_name:
+                mime_type = (
+                    getattr(new_file, "content_type", None) if new_file else None
+                )
+
+                # Chamada ao Service (Atualiza no Google)
+                drive_service.update_file(
+                    file_id=instance.drive_file_id,
+                    file_obj=new_file,
+                    new_name=new_name,
+                    mime_type=mime_type,
+                )
+
+                # Atualiza campos técnicos no Banco se mudou o arquivo
+                if new_file:
+                    instance.file_size = new_file.size
+                    instance.mime_type = mime_type
+                    # Opcional: Atualizar quem modificou (uploaded_by) para o usuário atual?
+                    # instance.uploaded_by_id = request.user.id
+
+                updates_made = True
+
+            # Atualiza campos simples no Banco
+            if new_name:
+                instance.file_name = new_name
+                updates_made = True
+
+            if description is not None:
+                instance.description = description
+                updates_made = True
+
+            if updates_made:
+                instance.save()
+
+            return Response(AttachedFileListSerializer(instance).data)
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar arquivo {instance.public_id}: {e}")
+            return Response(
+                {"error": "Falha ao atualizar arquivo no provedor de armazenamento."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+    @extend_schema(exclude=True)
+    def update(self, request, *args, **kwargs):
+        # Redireciona PUT para PATCH para garantir lógica unificada
+        return self.partial_update(request, *args, **kwargs)
+
+    @extend_schema(
         summary="Baixar arquivo (Download Proxy)",
         description="""
         Faz o streaming do arquivo diretamente do Google Drive para o navegador do usuário.
-        Retorna o arquivo com o `Content-Type` original para correta visualização ou download.
+        Retorna o arquivo com o `Content-Type` original.
         """,
         responses={
-            200: OpenApiTypes.BINARY,
+            200: {
+                "description": "Arquivo binário",
+                "content": {"*/*": {"schema": {"type": "string", "format": "binary"}}},
+            },
             404: OpenApiTypes.OBJECT,
         },
     )
@@ -202,6 +275,42 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
             )
 
     @extend_schema(
+        summary="Visualizar arquivo (Inline Preview)",
+        description="""
+        Semelhante ao download, mas instrui o navegador a tentar renderizar o arquivo 
+        na própria aba (ex: abrir PDF, exibir Imagem) em vez de forçar o 'Salvar como'.
+        """,
+        responses={
+            200: {
+                "description": "Arquivo binário",
+                "content": {"*/*": {"schema": {"type": "string", "format": "binary"}}},
+            },
+            404: OpenApiTypes.OBJECT,
+        },
+    )
+    @action(detail=True, methods=["get"])
+    def preview(self, request, public_id=None):
+        instance = self.get_object()
+
+        try:
+            file_stream = drive_service.download_stream(instance.drive_file_id)
+
+            response = FileResponse(
+                file_stream,
+                as_attachment=False,  # Inline display
+                filename=instance.file_name,
+                content_type=instance.mime_type,
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"Erro ao gerar preview do arquivo {public_id}: {e}")
+            return Response(
+                {"error": "Arquivo indisponível para visualização."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    @extend_schema(
         summary="Remover arquivo permanentemente",
         description="""
         Remove o registro do banco de dados E apaga o arquivo físico no Google Drive.
@@ -216,51 +325,3 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
         # A lógica de deleção física foi movida para signals.py para garantir consistência
         # Aqui apenas chamamos o delete padrão do DRF, que aciona o signal.
         return super().destroy(request, *args, **kwargs)
-
-    @extend_schema(
-        summary="Atualizar metadados do arquivo",
-        description="Atualiza apenas campos informativos (ex: descrição). Não permite trocar o arquivo físico.",
-        responses={
-            200: AttachedFileListSerializer,
-        },
-    )
-    def update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
-
-    @extend_schema(exclude=True)
-    def partial_update(self, request, *args, **kwargs):
-        return super().partial_update(request, *args, **kwargs)
-
-    @extend_schema(
-        summary="Visualizar arquivo (Inline Preview)",
-        description="""
-        Semelhante ao download, mas instrui o navegador a tentar renderizar o arquivo 
-        na própria aba (ex: abrir PDF, exibir Imagem) em vez de forçar o 'Salvar como'.
-        Retorna header `Content-Disposition: inline`.
-        """,
-        responses={
-            200: OpenApiTypes.BINARY,
-            404: OpenApiTypes.OBJECT,
-        },
-    )
-    @action(detail=True, methods=["get"])
-    def preview(self, request, public_id=None):
-        instance = self.get_object()
-
-        try:
-            file_stream = drive_service.download_stream(instance.drive_file_id)
-
-            response = FileResponse(
-                file_stream,
-                as_attachment=False,
-                filename=instance.file_name,
-                content_type=instance.mime_type,
-            )
-            return response
-
-        except Exception as e:
-            logger.error(f"Erro ao gerar preview do arquivo {public_id}: {e}")
-            return Response(
-                {"error": "Arquivo indisponível para visualização."},
-                status=status.HTTP_404_NOT_FOUND,
-            )

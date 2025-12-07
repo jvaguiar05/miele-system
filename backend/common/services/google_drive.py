@@ -111,5 +111,38 @@ class GoogleDriveService:
                 return
             raise
 
+    def update_file(
+        self, file_id: str, file_obj=None, new_name: str = None, mime_type: str = None
+    ):
+        """
+        Atualiza metadados (nome) e/ou conteúdo (binário) de um arquivo existente.
+        O ID do arquivo no Drive permanece o mesmo.
+        """
+        service = self._get_service()
+
+        # 1. Prepara metadados (se houver mudança de nome)
+        file_metadata = {}
+        if new_name:
+            file_metadata["name"] = new_name
+
+        # 2. Prepara o conteúdo (se houver novo arquivo)
+        media = None
+        if file_obj and mime_type:
+            media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
+
+        # Se não tem nada para atualizar, retorna
+        if not file_metadata and not media:
+            return
+
+        try:
+            # O método update aceita metadata e media_body opcionais
+            service.files().update(
+                fileId=file_id, body=file_metadata, media_body=media
+            ).execute()
+
+        except HttpError as e:
+            logger.error(f"Erro ao atualizar arquivo {file_id}: {e}")
+            raise
+
 
 drive_service = GoogleDriveService()
