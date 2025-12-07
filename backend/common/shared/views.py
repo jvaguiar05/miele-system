@@ -113,6 +113,7 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
         object_uuid = serializer.validated_data["object_id"]
         file_type = serializer.validated_data["file_type"]
         description = serializer.validated_data.get("description", "")
+        metadata = serializer.validated_data.get("metadata", {})
 
         # Tenta pegar o tipo resolvido pelo serializer
         entity_type = serializer.validated_data.get("resolved_entity_type")
@@ -149,6 +150,7 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
                 mime_type=mime_type,
                 drive_file_id=drive_id,
                 description=description,
+                metadata=metadata,
             )
 
             response_serializer = AttachedFileListSerializer(attached_file)
