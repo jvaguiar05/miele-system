@@ -129,6 +129,13 @@ class AttachedFile(models.Model):
         help_text="ID do arquivo no Google Drive (Service Account)",
     )
 
+    # Campo para metadados extras condicionais
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Metadados extras condicionais (ex: data de validade para contratos)",
+    )
+
     # Metadados de Auditoria
     uploaded_by_id = models.BigIntegerField(help_text="ID do usuário que fez upload")
     created_at = models.DateTimeField(auto_now_add=True)

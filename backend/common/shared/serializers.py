@@ -175,6 +175,11 @@ class AttachedFileCreateSerializer(serializers.Serializer):
     )
     description = serializers.CharField(required=False, allow_blank=True)
     file = serializers.FileField(write_only=True)
+    expiration_date = serializers.DateField(
+        required=False,
+        write_only=True,
+        help_text="Data de validade (obrigatória para contratos de clientes)",
+    )
 
     def validate_file_type(self, value):
         return value.lower()
@@ -182,9 +187,11 @@ class AttachedFileCreateSerializer(serializers.Serializer):
     def validate(self, attrs):
         """
         Validação Cruzada: Verifica se o file_type é válido para a entidade encontrada.
+        Aplica validação condicional de data de validade para contratos de clientes.
         """
         object_uuid = attrs.get("object_id")
         input_type = attrs.get("file_type")
+        expiration_date = attrs.get("expiration_date")
 
         # 1. Resolver Entidade (Client ou PerDcomp)
         entity, entity_type = resolve_entity(object_uuid)
@@ -207,6 +214,21 @@ class AttachedFileCreateSerializer(serializers.Serializer):
                 }
             )
 
+        # 4. Validação condicional: data de validade obrigatória para contratos de clientes
+        if entity_type == "client" and input_type == "contrato":
+            if not expiration_date:
+                raise serializers.ValidationError(
+                    {
+                        "expiration_date": "Data de validade é obrigatória para contratos de clientes."
+                    }
+                )
+
+        # 5. Se data de validade foi fornecida, adicionar aos metadados
+        if expiration_date:
+            attrs["metadata"] = {"expiration_date": expiration_date.isoformat()}
+            # Remove o campo para não quebrar o save do model
+            attrs.pop("expiration_date")
+
         # OTIMIZAÇÃO: Injetamos o tipo resolvido para a View não precisar buscar de novo
         attrs["resolved_entity_type"] = entity_type
 
@@ -214,19 +236,30 @@ class AttachedFileCreateSerializer(serializers.Serializer):
 
 
 class AttachedFileUpdateSerializer(serializers.ModelSerializer):
-    """Para PATCH (atualização apenas de metadados, não do arquivo em si)."""
+    """
+    Para PATCH/PUT via Proxy.
+    Permite:
+    1. Alterar descrição.
+    2. Renomear arquivo (file_name).
+    3. Substituir o arquivo físico (file) mantendo o ID.
+    """
 
     description = serializers.CharField(required=False, allow_blank=True)
+    file_name = serializers.CharField(
+        required=False, help_text="Novo nome para o arquivo"
+    )
+    file = serializers.FileField(
+        required=False,
+        write_only=True,
+        help_text="Novo binário para substituir o atual",
+    )
 
     class Meta:
         model = AttachedFile
-        fields = ["description"]  # Apenas descrição é editável
-        # Nota: read_only_fields não é necessário se listarmos apenas description em fields,
-        # mas mantemos aqui para documentação explícita do que NÃO muda.
+        fields = ["description", "file_name", "file"]  # Campos que o front pode enviar
         read_only_fields = [
             "id",
-            "file_name",
-            "file_type",
+            "file_type",  # Geralmente não deixamos mudar o tipo (ex: de Contrato para Recibo) num update
             "file_size",
             "uploaded_by",
             "created_at",
