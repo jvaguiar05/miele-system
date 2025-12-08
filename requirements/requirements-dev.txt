@@ -56,9 +56,12 @@ colorama==0.4.6
     #   click
     #   pytest
     #   uvicorn
+dj-database-url==2.3.0
+    # via -r requirements/base.in
 django==5.2.8
     # via
     #   -r requirements/base.in
+    #   dj-database-url
     #   django-anymail
     #   django-cors-headers
     #   django-filter
@@ -239,6 +242,8 @@ sqlparse==0.5.3
     # via django
 types-requests==2.32.4.20250913
     # via -r requirements/dev.in
+typing-extensions==4.15.0
+    # via dj-database-url
 tzdata==2025.2
     # via
     #   django
@@ -270,6 +275,8 @@ websockets==15.0.1
     # via uvicorn
 wheel==0.45.1
     # via pip-tools
+whitenoise==6.11.0
+    # via -r requirements/base.in
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip
