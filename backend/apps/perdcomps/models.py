@@ -6,6 +6,16 @@ import uuid
 User = get_user_model()
 
 
+def get_current_date():
+    """Retorna a data atual para usar como default."""
+    return timezone.now().date()
+
+
+def get_default_numero_perdcomp():
+    """Gera um número padrão para PER/DCOMP."""
+    return f"PERDCOMP-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+
+
 class PerDcomp(models.Model):
     """
     Modelo para Pedido Eletrônico de Restituição, Ressarcimento ou Reembolso
@@ -38,9 +48,12 @@ class PerDcomp(models.Model):
     cnpj = models.CharField(max_length=18, help_text="CNPJ do cliente")
 
     # Identificação do processo
-    numero = models.TextField(help_text="Número do documento")
+    numero = models.TextField(
+        null=True, blank=True, help_text="Número do documento"
+    )
     numero_perdcomp = models.TextField(
-        null=True, blank=True, help_text="Número específico do PER/DCOMP"
+        default=get_default_numero_perdcomp,
+        help_text="Número específico do PER/DCOMP"
     )
     processo_protocolo = models.TextField(
         null=True, blank=True, help_text="Protocolo do processo (texto)"
@@ -48,10 +61,12 @@ class PerDcomp(models.Model):
 
     # Datas importantes
     data_transmissao = models.DateField(
-        null=True, blank=True, help_text="Data da transmissão"
+        default=get_current_date,
+        help_text="Data da transmissão"
     )
     data_vencimento = models.DateField(
-        null=True, blank=True, help_text="Data do vencimento"
+        default=get_current_date,
+        help_text="Data do vencimento"
     )
     data_competencia = models.DateField(
         null=True, blank=True, help_text="Data da competência"
@@ -59,20 +74,26 @@ class PerDcomp(models.Model):
 
     # Dados fiscais
     tributo_pedido = models.TextField(help_text="Tributo do pedido")
-    competencia = models.TextField(help_text="Competência do tributo")
+    competencia = models.TextField(
+        null=True, blank=True, help_text="Competência do tributo"
+    )
 
     # Valores monetários (como VARCHAR para manter precisão exata)
     valor_pedido = models.CharField(
         max_length=50, help_text="Valor solicitado no pedido"
     )
-    valor_compensado = models.CharField(max_length=50, help_text="Valor compensado")
+    valor_compensado = models.CharField(
+        max_length=50, null=True, blank=True, help_text="Valor compensado"
+    )
     valor_recebido = models.CharField(
-        max_length=50, help_text="Valor efetivamente recebido"
+        max_length=50, null=True, blank=True, help_text="Valor efetivamente recebido"
     )
     valor_saldo = models.CharField(
-        max_length=50, help_text="Valor do saldo remanescente"
+        max_length=50, null=True, blank=True, help_text="Valor do saldo remanescente"
     )
-    valor_selic = models.CharField(max_length=50, help_text="Valor dos juros SELIC")
+    valor_selic = models.CharField(
+        max_length=50, null=True, blank=True, help_text="Valor dos juros SELIC"
+    )
 
     # Status do processo
     status = models.CharField(
