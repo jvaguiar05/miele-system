@@ -48,14 +48,16 @@
 
 - **Autenticação:** `djangorestframework-simplejwt` com refresh rotation + blacklist.
 - **Autorização:** Groups/Permissions nativos (RBAC) + `permissions.py` por recurso.
-- **Aprovação de ações sensíveis:** padrão Command Request/Approve.
-- **Auditoria:** tabelas dedicadas ligadas a entidades/usuários, imutáveis, com `correlation_id`.
-- **Anexos:** `django-storages` (S3 em prod; local em dev). Nomeação determinística e varredura básica de tipo.
-- **Integração CNPJ:** client HTTP simples (BrasilAPI) com timeout, retry e circuit breaker leve (cache curto).
-- **Tasks assíncronas:** Celery + Redis (MVP se setup simples via compose). Fallback síncrono se indisponível.
+- **Aprovação de ações sensíveis:** padrão Command Request/Approve via `common.approvals`.
+- **Auditoria:** tabelas dedicadas ligadas a entidades/usuários, imutáveis, com `correlation_id` via `common.audit`.
+- **Anexos:** Google Drive API (OAuth 2.0) com proxy transparente para upload/download. Nomeação determinística e validação de tipo via `common.services.google_drive`.
+- **Integração CNPJ:** client HTTP simples (BrasilAPI) com timeout, retry e circuit breaker leve (cache curto) - **não implementado no MVP atual**.
+- **Tasks assíncronas:** Processamento síncrono no MVP. Celery + Redis configurados nas dependências mas não ativos.
 - **Throttling/Rate limit:** DRF throttling + `django-ratelimit` em `/auth/*`.
 - **Paginação:** `PageNumberPagination` padrão DRF.
 - **OpenAPI:** `drf-spectacular` com exemplos e erros canônicos.
+- **Interface Admin:** Django Admin com tema `django-jazzmin` moderno.
+- **Arquivos estáticos:** `whitenoise` para servir em produção.
 
 ---
 
@@ -90,93 +92,95 @@
 
 ---
 
-## 6. Estrutura de Pastas (Base)
+## 6. Estrutura de Pastas (Implementada)
 
-> Tudo que consta aqui existirá no repositório.
+> Estrutura atual do repositório conforme implementação.
 
 ```text
 miele-system/
     .env.example                 # template de variáveis (raiz do repo)
     Makefile                     # comandos de DX (lint/test/migrate/up)
-    requirements.txt             # gerado por pip-compile a partir de base.in
-    requirements-dev.txt         # gerado por pip-compile a partir de dev.in
-    base.in                      # deps runtime (fonte)
-    dev.in                       # deps de desenvolvimento (fonte)
-    docker-compose.yml           # serviços (web, db, redis) — raiz
+    render.yaml                  # configuração deploy Render.com
+    requirements/
+        base.in                  # deps runtime (fonte)
+        dev.in                   # deps de desenvolvimento (fonte)
+        requirements.txt         # gerado por pip-compile
+        requirements-dev.txt     # gerado por pip-compile
+    docker-compose.yml           # serviços (web, db) — raiz
     Dockerfile                   # imagem da app — raiz
     docs/
         adr/                     # Architecture Decision Records
-        db/                      # database-related files
+        db/                      # database schema e diagramas
+        DEPLOYMENT.md            # guia de deploy
+        GIT-WORKFLOW.md          # workflow de desenvolvimento
     scripts/
-        load_demo_data.py
-        cleanup_tmp.py
+        audit_approval_examples.py
     backend/
         manage.py
         core/
             asgi.py
             wsgi.py
-            urls.py
-            middleware.py
+            urls.py              # roteamento principal
+            middleware.py        # correlation ID, failed login tracking
             settings/
-                base.py
-                dev.py
-                prod.py
+                base.py          # configurações base
+                dev.py           # desenvolvimento
+                prod.py          # produção
         common/
             utils/
-                ids.py
-                time.py
-                validators.py
-            email/
-                sender.py
-                templates/
-            storage/
-                files.py
-            audit/
-                models.py
-                services.py
+                ids.py           # geração de UUIDs
+                time.py          # utilitários de data/hora
+                validators.py    # validadores customizados
+                approvals.py     # lógica de aprovação
+            services/
+                google_drive.py  # integração Google Drive API
+            audit/               # sistema de auditoria
+                models.py        # AuditLog
+                services.py      # lógica de auditoria
+                admin.py         # interface admin
+                urls.py, views.py
+            approvals/           # sistema de aprovações
+                models.py        # ApprovalRequest
+                services.py      # lógica de aprovação
+                mixins.py        # mixins para ViewSets
+                admin.py
+            shared/              # modelos compartilhados
+                models.py        # Annotation, AttachedFile
+                admin.py         # admin com inlines
+                urls.py, views.py
             observability/
-                logging.py
-                health.py
-            integrations/
-                cnpj_client.py
+                logging.py       # configuração de logs JSON
+                health.py        # endpoints de health check
+            permissions.py       # permissões customizadas
         apps/
-            identity/
-                models.py
+            identity/            # autenticação e usuários
+                models.py        # User customizado
+                views.py         # auth, profile, TOTP
                 serializers.py
-                views.py
-                services.py
                 permissions.py
-                urls.py
-                tasks.py
-                tests/
-            clients/
-                models.py
+                urls/            # auth.py, users.py, admin.py
+                admin.py
+                management/      # comandos de setup
+            clients/             # gestão de clientes
+                models.py        # Client, Address
+                views.py         # CRUD com aprovações
                 serializers.py
-                views.py
                 services.py
-                permissions.py
-                urls.py
-                tasks.py
-                tests/
-            perdcomps/
-                models.py
+                urls.py, urls_dashboard.py
+                admin.py
+            perdcomps/           # documentos tributários
+                models.py        # PerDcomp
+                views.py         # CRUD com aprovações
                 serializers.py
-                views.py
-                services.py
-                permissions.py
-                urls.py
-                tasks.py
-                tests/
-            admin_backoffice/
-                views.py
                 services.py
                 urls.py
-                templates/
-                tests/
+                admin.py
         api/
-            routers.py
+            routers.py           # roteamento centralizado
             schemas/
-                spectacular.py
+                spectacular.py   # configuração OpenAPI
+        integration/
+            google-drive/        # credenciais OAuth (não versionadas)
 ```
 
 ---
@@ -214,10 +218,13 @@ miele-system/
 
 ## 10. Tarefas Assíncronas
 
-- **Celery + Redis (MVP se compose simples):**
+- **Status MVP:** Processamento síncrono para simplificar implementação inicial.
+- **Dependências configuradas:** Celery + Redis estão em `requirements/base.in` mas não ativos.
+- **Planejamento futuro:**
   - Fila: envio de e-mail, limpeza, pré-processamento de anexos.
   - Retries exponenciais e DLQ simples (log).
-  - Fallback: se fila indisponível, e-mail pode cair para execução síncrona com timeouts.
+  - Fallback: se fila indisponível, operações podem executar de forma síncrona com timeouts.
+- **Comandos de management:** Limpeza via Django management commands.
 
 ---
 
@@ -231,19 +238,26 @@ miele-system/
 
 ## 12. Anexos & Storage
 
-- **Dev:** filesystem local (pasta versionada fora do repo).
-- **Prod:** S3 via django-storages.
-- **Nomes de arquivo:** `{entidade}/{public_id}/{timestamp}_{slug}.{ext}`.
-- **Políticas:** tamanho máximo, tipos permitidos, varredura básica (futuro: clamd).
-- **Links:** URL assinada quando sensível.
+- **Dev:** Google Drive API (mesma implementação de prod para consistência).
+- **Prod:** Google Drive API via OAuth 2.0 com proxy transparente implementado em `common.services.google_drive`.
+- **Nomes de arquivo:** `{entity_type}/{public_id}/{timestamp}_{original_filename}.{ext}`.
+- **Políticas:** tamanho máximo (100MB default), tipos permitidos, validação de MIME type.
+- **Links:** Proxy transparente via API interna (`/api/v1/shared/files/{id}/download/`) sem exposição de URLs do Google Drive.
+- **Configuração:** Via variáveis de ambiente (client_id, client_secret, refresh_token, folder_ids).
+- **Pasta structure:** Pastas separadas por tipo de entidade (clients, perdcomps) no Google Drive.
 
 ---
 
 ## 13. Integrações
 
-- **CNPJ (MVP):** client `common.integrations.cnpj_client`:
-  - Timeout curto, retry com jitter, cache curto (ex.: 5–15 min).
+- **Google Drive (implementado):** client `common.services.google_drive`:
+  - OAuth 2.0 com refresh token automático.
+  - Timeout configurado, handling de erros HTTP.
+  - Upload/download via proxy transparente.
   - Logs de requisição/resposta (sem dados sensíveis).
+- **CNPJ (planejado):** client HTTP para validação externa:
+  - Timeout curto, retry com jitter, cache curto (ex.: 5–15 min).
+  - Não implementado no MVP atual.
 - **Receita Federal:** futuro.
 
 ---

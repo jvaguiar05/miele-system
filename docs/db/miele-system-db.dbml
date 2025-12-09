@@ -58,16 +58,12 @@ Enum file_owner {
   perdcomp
 }
 
-Enum file_kind {
+Enum file_type {
+  document
+  image
+  pdf
+  excel
   generic
-  recibo
-  pedido_recebimento
-  perdcomp_summary
-}
-
-Enum storage_backend {
-  local
-  s3
 }
 
 
@@ -298,20 +294,20 @@ Table app_files {
   object_id bigint [not null] // target object id
 
   owner file_owner [not null] // helps in validation and indexes
-  kind file_kind [not null, default: 'generic'] // rule: perdcomp_summary only with owner=client
+  file_type file_type [not null, default: 'generic'] // type of file based on content
 
   uploaded_by_id bigint [not null, ref: > identity_user.id]
   filename varchar(255) [not null]
   content_type varchar(150) [not null]
   size_bytes bigint [not null]
   checksum_sha256 varchar(64) [not null]
-  backend storage_backend [not null, default: 'local']
-  storage_path text [not null]
+  drive_file_id varchar(255) [not null] // Google Drive File ID
+  storage_path text // Deprecated - kept for migration compatibility
 
   created_at timestamptz [not null, default: `now()`]
   deleted_at timestamptz
 
-  Note: 'Generic files with type and owner.'
+  Note: 'Files stored in Google Drive via OAuth 2.0.'
 
   Indexes {
     (public_id) [unique]

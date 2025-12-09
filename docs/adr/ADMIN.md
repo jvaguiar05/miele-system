@@ -47,7 +47,7 @@ Interface administrativa **interna** para gestão do sistema (usuários, aprova�
 
 ## 3. Estrutura do Projeto
 
-- **URL base:** `/backoffice/` (não usar `/admin/` padrão)
+- **URL base:** `/admin/` (Django Admin padrão).
 - **App dedicada:** `apps/admin_backoffice/` para páginas auxiliares (dashboards, filas, visões agregadas)
 - **Django Admin nativo:** CRUD interno, com tema e hardening.
 
@@ -103,75 +103,108 @@ backend/
 ## 6. UX e Visual
 
 - **Tema moderno:**
-  - Opção A: tema pronto (ex.: Jazzmin) com dark mode, ícones, menu lateral, breadcrumbs
-  - Opção B: overrides de `templates/admin/*` + CSS próprio
+  - **Django-Jazzmin** configurado com dark mode, ícones, menu lateral, breadcrumbs e navegação aprimorada
+  - Interface responsiva e moderna
+  - Customização de cores e branding
 - **Navegação:**
-  - Menu lateral por contexto (Identity, Clients, PER/DCOMPs, Requests, Logs)
-  - Atalhos rápidos no topo (aprovações pendentes, busca global)
+  - Menu lateral por contexto (Identity, Clients, PER/DCOMPs, Common)
+  - Inline editing para modelos relacionados (Address, Annotations, Files)
+  - Actions personalizadas para aprovações em lote
 - **Componentes-chave:**
-  - Filtros visíveis, buscas por campo chave (CNPJ, e-mail, ID público)
-  - Listagens paginadas com colunas úteis (status, timestamps, autor)
-  - Ações em massa apenas para Admin; operadores com escopo limitado
+  - Filtros por status, data de criação, tipo de entidade
+  - Buscas por campo chave (CNPJ, e-mail, public_id, razão social)
+  - Listagens paginadas com colunas úteis (status, timestamps, creator)
+  - Inlines para Annotations e AttachedFiles nas entidades principais
+  - Display formatado para JSON fields e campos complexos
 - **Acessibilidade e i18n:**
   - Locale `pt-br`, TZ `America/Sao_Paulo`
-  - Teclas de atalho para navegação (opcional)
+  - Campos readonly para metadados (public_id, timestamps)
 
 ---
 
 ## 7. Funcionalidades do BackOffice
 
-### 7.1 Dashboard (Home)
+### 7.1 Gestão de Usuários (Identity)
 
-- Cards: usuários ativos/suspensos, clientes ativos, PER/DCOMPs ativas, requests pendentes
-- Gráfico de atividades (últimos 7/30 dias)
-- Fila rápida: requests pendentes (aprovar/recusar em 1 clique)
-- Alertas: erros recentes (Sentry), falhas de integração (CNPJ)
+- **UserAdmin customizado** baseado em Django UserAdmin
+- Campos de visualização: username, email, full_name, role, approval_status, is_active, date_joined
+- Filtros: role, approval_status, is_active, is_staff, date_joined, last_login
+- Busca: username, email, first_name, last_name
+- Fieldsets organizados: Informações Pessoais, Senha, Permissões e Status, Aprovação, Controle
+- Inlines: Annotations e AttachedFiles vinculados ao usuário
+- Readonly fields: public_id, date_joined, last_login
 
-### 7.2 Gestão de Usuários (Identity)
+### 7.2 Gestão de Clientes
 
-- Listagem: filtros (status, grupo, criado_em), busca por nome/e-mail
-- Criar/Editar: setar `is_staff`, grupos
-- Ações: suspender/reativar, soft-delete, reset de senha
-- 2FA: visualizar status, revogar dispositivos TOTP (com reauth)
-- Auditoria: histórico de mudanças por usuário
+- **ClientAdmin** com visualização completa do ciclo de vida
+- Campos de visualização: razao_social, cnpj, nome_fantasia, status, is_active, created_at
+- Filtros personalizados: is_active, created_at, updated_at, com filtros por status específico
+- Busca: cnpj, razao_social, nome_fantasia
+- Inline para Address (um-para-um automático)
+- Inlines para Annotations e AttachedFiles
+- Fieldsets: Informações Gerais, Dados Empresariais, Localização/Endereço, Controle
+- Display formatado para CNPJ e campos JSON
 
-### 7.3 Requests (Aprovação de Ações Sensíveis)
+### 7.3 Gestão de Endereços
 
-- Tipos: `ClientSensitiveUpdate`, `ClientDelete`, `PerdcompSensitiveUpdate`, `PerdcompDelete`
-- Detalhe: diff de campos, justificativa, `requested_by`, anexos
-- Ações: aprovar/recusar (justificativa obrigatória), revalidar TOTP
-- Regra: Admin pode executar direto; demais perfis via request
-- SLA: destacar requests > X horas pendentes
+- **AddressAdmin** separado para controle detalhado
+- Campos: string representation, municipio, uf, cep, created_at
+- Filtros: uf, municipio, created_at
+- Busca: logradouro, numero, bairro, municipio, cep
+- Fieldsets organizados por contexto geográfico
 
-### 7.4 Supervisão de Clientes
+### 7.4 Supervisão de PER/DCOMPs
 
-- Leitura: dados gerais, status, CNPJ, anexos
-- Escrita (não sensível): ajustes de campos comuns
-- Fluxo sensível: disparar request para CNPJ e dados críticos
-- Notas: listar por autor; Admin vê todas; filtros por usuário/data
-- Auditoria: histórico de eventos e alterações
+- **PerDcompAdmin** com foco em documentos tributários
+- Campos de visualização: numero, numero_perdcomp, cliente, status, valor_pedido, data_transmissao
+- Filtros: status, data_transmissao, data_vencimento, created_at, updated_at
+- Date hierarchy por data_transmissao
+- Busca: numero, numero_perdcomp, cnpj, processo_protocolo
+- Inlines para Annotations e AttachedFiles
+- Fieldsets: Informações Gerais, Vinculação, Valores e Datas, Controle
+- Display customizado para cliente relacionado
+- Readonly fields: todos os campos (imutabilidade)
+- Display JSON formatado para payload_before/after
+- Fieldsets colapsáveis para dados técnicos
+- Ordenação por timestamp (mais recente primeiro)
 
-### 7.5 Supervisão de PER/DCOMPs
+### 7.6 Aprovações (ApprovalRequest)
 
-- Leitura: dados, vínculo com cliente, status, anexos
-- Escrita (não sensível): ajustes comuns
-- Fluxo sensível: request para números/identificadores críticos
-- Notas: mesmas regras dos clientes
-- Auditoria: histórico vinculado
+- **ApprovalRequestAdmin** para gerenciar workflow de aprovações
+- Filtros: StatusFilter, RequestTypeFilter  
+- Campos: entity_display, change_type, status, requested_by, requested_at
+- Busca: requested_by_id, reviewed_by_id
+- Actions personalizadas para aprovação em lote
+- Fieldsets: Request Details, Data Changes, Review Information, Metadata, Timestamps
+- Display formatado para changes_requested (JSON)
+- Readonly fields baseados no status da request
 
-### 7.6 Logs e Auditoria
+### 7.7 Arquivos e Anexos (Shared)
 
-- Consulta: filtros por período, ator, entidade, ação, `correlation_id`
-- Detalhe: payload relevante (sem dados sensíveis), IP, user agent
-- Export: CSV (Admin e Auditor)
-- Correlação: navegar da ação ao objeto e ao usuário
+- **AttachedFileAdmin** para gestão de uploads
+- Campos: filename, file_type, entity_display, uploaded_by, created_at
+- Filtros: file_type, created_at
+- Busca: filename, original_filename
+- Link direto para download via Google Drive
+- Display customizado para tamanho de arquivo e tipo MIME
+- Fieldsets: File Information, Entity Link, Metadata
+
+### 7.8 Anotações (Annotations)
+
+- **AnnotationAdmin** para gestão de notas
+- Campos: truncated_content, entity_display, created_by, created_at
+- Filtros: created_at, content_type
+- Busca: content, created_by__username
+- Display truncado do conteúdo para visualização rápida
+- Fieldsets: Content, Entity Link, Metadata
+- Inline disponível em todas as entidades principais
 
 ---
 
 ## 8. Integrações
 
-- **Consulta CNPJ:** ação no cliente para “Verificar CNPJ” (serviço gratuito); exibir resumo e timestamp
-- **Sentry (leitura):** widget com últimos eventos críticos (link externo)
+- **Google Drive API:** Gestão de arquivos anexos via proxy transparente
+- **Consulta CNPJ:** ação no cliente para "Verificar CNPJ" (serviço gratuito); exibir resumo e timestamp
 
 ---
 
@@ -189,14 +222,13 @@ backend/
 - Querysets otimizados: `select_related/prefetch_related` em `ModelAdmin.get_queryset`
 - Paginação padrão (50–100 itens)
 - Campos indexados: CNPJ, status, `created_at`, `updated_at`, `requested_by`
-- Uploads: storage configurado (S3 em prod) + URLs assinadas
+- Uploads: Google Drive API (OAuth 2.0) com proxy transparente
 
 ---
 
 ## 11. Observabilidade
 
 - Logs: ações administrativas em JSON (stdout)
-- Sentry: erros de template/admin e exceções
 - Health: endpoints `/health/live` e `/health/ready` visíveis apenas para Admin (ou IP allowlist)
 - Métricas (futuro): page views, volume de approvals por período
 
@@ -254,7 +286,7 @@ backend/
 - **2FA:** TOTP obrigatório para `is_staff`
 - **Login:** rate limit + lockout
 - **Headers:** HSTS, CSP, etc.
-- **Storage:** local (dev); S3 (prod)
+- **Storage:** Google Drive API (OAuth 2.0)
 - **Logs:** JSON stdout; Sentry habilitado em prod
 - **Locale:** `LANG=pt-br`, `TZ=America/Sao_Paulo`
 
