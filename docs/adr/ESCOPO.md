@@ -2,175 +2,253 @@
 
 ## Função
 
-O **Miele System** é um software de **gestão empresarial** cuja principal função é expor e controlar formulários relacionados a **clientes** e a **PER/DCOMPs** (documentos de análise tributária) referentes aos serviços prestados pela companhia.  
-O sistema deve suportar **autenticação** e **autorização por cargos**, garantindo que somente usuários autorizados acessem e/ou alterem dados sensíveis.
+O **Miele System** é um software de **gestão empresarial** desenvolvido pela Compasse, cuja principal função é controlar e gerenciar **clientes** e **PER/DCOMPs** (documentos de análise tributária) referentes aos serviços prestados pela empresa.  
+
+O sistema implementa **autenticação robusta** com JWT e 2FA, **autorização granular** por roles (RBAC), **sistema de aprovações** para mudanças sensíveis, **auditoria completa** e **interface administrativa moderna** com Django Admin + Jazzmin.
 
 ---
 
 ## Usuários
 
-- **Funcionário da empresa**: registra, consulta e manipula informações de clientes e PER/DCOMPs.
-- **Administrador (Gerente/Admin do software)**: valida usuários, supervisiona logs, controla dados sensíveis e aprova/recusa ações relevantes.
-- **Convidado da Empresa**: visualiza informações de clientes e PER/DCOMPs.
+- **Employee (Funcionário)**: Registra, consulta e manipula informações de clientes e PER/DCOMPs. Pode criar anotações e fazer uploads. Alterações sensíveis geram requests de aprovação.
+- **Admin (Administrador)**: Acesso total ao sistema, aprova/recusa requests, gerencia usuários, supervisiona logs de auditoria, executa ações sensíveis diretamente sem aprovação.
+- **Guest (Convidado)**: Acesso limitado apenas para visualização de dados públicos não sensíveis.
 
-> Observação: o design prevê **extensibilidade futura** para perfis adicionais (ex.: acesso parcial a clientes externos), embora **fora do MVP**.
+> **Observação**: O sistema utiliza **Django Groups** para implementar RBAC, com roles mapeadas para permissões específicas por recurso.
 
 ---
 
 ## Contextos Principais
 
-### 1 Identity (Usuários + Autenticação)
+### 1. Identity (Usuários + Autenticação)
 
-**MVP**
+**Implementado**
 
-- Aprovação de criação de usuário por **admin** via endpoints.
-- Login/Logout com **JWT + refresh rotation + blacklist**.
-- **2FA TOTP** com app autenticador (ex.: Google Authenticator) usando `django-otp`.
-  - **Fallback**: verificação por **e-mail** caso o usuário não ative TOTP.
-- **RBAC** por grupos/permissões (DRF).
-- **E-mail transacional** (confirmação, reset de senha).
-- **Soft-delete** de usuário.
-- **Rate limiting** em `/auth/*` (ex.: `django-ratelimit`).
-- **Throttling DRF** (escopos `anon`/`user` e por endpoints sensíveis).
+- **Registro com aprovação**: Novos usuários ficam pendentes até aprovação do Admin.
+- **Autenticação JWT**: Access tokens curtos (15min) + refresh rotation + blacklist via `djangorestframework-simplejwt`.
+- **2FA TOTP**: Integração com `django-otp` para autenticação de dois fatores via apps como Google Authenticator.
+- **RBAC**: Sistema baseado em Django Groups (Admin, Employee, Guest) com permissões granulares.
+- **Rate limiting**: `django-ratelimit` aplicado em endpoints de autenticação.
+- **Throttling**: DRF throttling para limitar requisições por usuário/IP.
+- **Soft-delete**: Usuários são desativados, não removidos fisicamente.
+- **Change requests**: Alterações sensíveis (email, etc.) geram approval requests.
 
-**Futuro**
-
-- **SMS (OTP)** (excluído do MVP por custo).
-
----
-
-### 2 Clients (Clientes da Companhia)
-
-**MVP**
-
-- Proteção de endpoints (auth + RBAC).
-- Ações únicas do admin (**Soft-Delete**).
-- Ações que exigem aprovação do admin (alteração de dados sensíveis).
-- Controle completo do ciclo de vida do cliente.
-- **Logs de auditoria** detalhados e rastreáveis por usuário.
-- **Anotações por usuário** (cada usuário mantém suas próprias notas do cliente).
-- **Anexos** (recibos/docs) com armazenamento **local em dev** e **S3 em prod** (free tier ou equivalente).
+**Comandos de gerenciamento disponíveis:**
+- `create_superuser_with_role`: Criação de superusuário com role específica
+- `setup_roles`: Configuração inicial de roles e permissões
+- `migrate_users`: Migração de usuários existentes para novo sistema de roles
 
 ---
 
-### 3 PER/DCOMPs (por Cliente)
+### 2. Clients (Clientes da Companhia)
 
-**MVP**
+**Implementado**
 
-- Proteção de endpoints (auth).
-- Ações únicas do admin (**Soft-Delete**).
-- Ações que exigem aprovação do admin (alteração sensível).
-- Controle completo do ciclo de vida da PER/DCOMP.
-- **Logs de auditoria** detalhados e rastreáveis por usuário.
-- **Anotações por usuário**.
-- **Anexos próprios** (upload manual), reutilizando o mesmo servidor de arquivos de Clientes.
+- **CRUD completo**: ViewSets DRF com lookup por `public_id` (UUID).
+- **Endereço integrado**: Cada cliente tem um endereço (modelo `Address`) criado automaticamente.
+- **Sistema de aprovações**: Alterações de campos sensíveis (CNPJ, razão social) geram `ApprovalRequest` para Admin.
+- **Anexos via Google Drive**: Upload/download transparente com proxy interno.
+- **Anotações por usuário**: Sistema de notas individuais com `Annotation` model.
+- **Soft-delete**: Apenas Admin pode deletar, com `deleted_at` timestamp.
+- **Auditoria completa**: Logs imutáveis de todas as operações via `AuditLog`.
+- **Filtros e busca**: Por CNPJ, razão social, status, data de criação.
+- **Validações**: CNPJ, campos obrigatórios, regras de negócio.
+
+**Interface Admin disponível** com inlines para endereço, anotações e arquivos anexos.
 
 ---
 
-### 4 Admin (BackOffice)
+### 3. PER/DCOMPs (por Cliente)
 
-> Detalhes em `ADMIN.md`. No escopo geral, o BackOffice deve permitir:
+**Implementado**
 
-**MVP**
+- **Vinculação obrigatória**: Cada PER/DCOMP pertence a um cliente específico.
+- **CRUD completo**: ViewSets com aprovações automáticas para campos sensíveis.
+- **Anexos próprios**: Sistema de upload independente para documentos específicos.
+- **Anotações por usuário**: Notas individuais por documento.
+- **Soft-delete**: Apenas Admin pode deletar diretamente.
+- **Auditoria completa**: Rastreamento de todas as alterações.
+- **Campos tributários**: Números, protocolos, valores, datas de transmissão/vencimento.
+- **Busca avançada**: Por número, CNPJ, protocolo, status.
 
-- **Dashboards**:
-  - Alterações por período (logs).
-  - Alterações por usuário.
-  - Alterações por entidade/cliente/PERD.
-- **Interface de Controle**:
-  - Gerenciar ciclo de vida de todas as entidades.
-  - Aprovar/recusar **usuários**.
-  - Aprovar/recusar **comandos sensíveis** (ex.: alteração de CNPJ).
-- **Contas temporárias read-only** (implementar por último no MVP).
+**Relacionamento com clientes** permite listagem de PER/DCOMPs por cliente específico.
+
+---
+
+### 4. Admin (BackOffice)
+
+**Implementado**
+
+- **Django Admin** customizado com tema **django-jazzmin** moderno e responsivo.
+- **Interfaces administrativas** completas para todas as entidades:
+  - **UserAdmin**: Gerenciamento de usuários, roles, status de aprovação
+  - **ClientAdmin**: Gestão de clientes com inline de endereço
+  - **PerDcompAdmin**: Supervisão de documentos tributários
+  - **AuditLogAdmin**: Visualização de logs com filtros avançados
+  - **ApprovalRequestAdmin**: Fila de aprovações com ações em lote
+- **Filtros avançados**: Por status, data, tipo de entidade, ação.
+- **Inlines automáticos**: Anotações e arquivos anexos em todas as entidades principais.
+- **Readonly fields**: Metadados imutáveis como `public_id`, timestamps.
+- **Display customizado**: Formatação JSON, truncamento de texto, links diretos.
 
 ---
 
 ## Integrações Externas
 
-**MVP**
+**Implementado**
 
-- **Consulta CNPJ** via **serviço gratuito** (ex.: BrasilAPI). Se indisponível/instável, pausar funcionalidade no MVP.
+- **Google Drive API**: Integração completa via OAuth 2.0 para armazenamento de arquivos
+  - Proxy transparente para upload/download
+  - Pastas organizadas por tipo de entidade (clients, perdcomps)
+  - Validação de tipos de arquivo e tamanhos
+  - Refresh token automático para acesso contínuo
 
-**Futuro**
+**Planejado (não implementado no MVP)**
 
-- Integração com **Receita Federal**.
-
-> **Anexação de arquivos**: sempre **manual** para clientes e PER/DCOMPs (no MVP).
+- **Consulta CNPJ**: Via serviços gratuitos como BrasilAPI
+- **Integração Receita Federal**: Para validações tributárias
 
 ---
 
 ## Observabilidade, Logs & Segurança
 
-**MVP**
+**Implementado**
 
-- **Logs JSON no stdout** (aplicação/infra).
-- **Sentry** para **exceções** (Django + Celery se ativo).
-- **Logs de Auditoria de Negócio internos** (tabelas dedicadas, com FK para entidades/usuários, imutáveis).
-- Health checks: `/health/live` e `/health/ready`.
-- **CORS restrito** e **headers de segurança** (HSTS, X-Content-Type-Options, etc.).
-
-**Futuro**
-
-- **Loki + Promtail + Grafana** para observabilidade de logs de aplicação/infra.
+- **Logs estruturados JSON**: Configuração via `common.observability.logging`
+- **AuditLog system**: Rastreamento imutável de todas as operações CUD
+  - Correlation ID para rastreamento de requests
+  - Payload before/after para mudanças
+  - Metadados completos (usuário, IP, timestamp, ação)
+- **Health checks**: Endpoints `/health/live` e `/health/ready`
+- **CORS restrito**: Configuração específica por ambiente
+- **Headers de segurança**: HSTS, X-Content-Type-Options, CSP
+- **Middleware custom**: Correlation ID, failed login tracking
+- **JWT Security**: Blacklist de tokens, rotação automática
 
 ---
 
 ## Tarefas Assíncronas
 
-**MVP**
+**Status MVP**
 
-- **Envio assíncrono de e-mail**.
-- **Jobs de limpeza** (retenção de logs/eventos/arquivos temporários).
-- **Celery + Redis** (incluir no MVP mediante **setup simples via `docker-compose`**).
+- **Processamento síncrono**: Para simplificar implementação inicial
+- **Dependências preparadas**: Celery + Redis estão em requirements mas não ativados
+- **Management commands**: Limpeza de dados via comandos Django
 
-**Futuro**
+**Planejamento futuro**
 
-- Ampliar uso do Celery para fluxos adicionais (ex.: processos longos, integrações em lote).
+- **Celery + Redis**: Para envio de emails, processamento de arquivos
+- **Jobs automatizados**: Limpeza de logs antigos, validações em lote
 
 ---
 
 ## Armazenamento de Arquivos
 
-**MVP**
+**Implementado**
 
-- **Local** em ambiente de desenvolvimento.
-- **S3 em produção** (preferir **free tier**).
+- **Google Drive API**: Única solução de storage implementada
+  - OAuth 2.0 com refresh token
+  - Proxy transparente via API (`/api/v1/shared/files/{id}/download/`)
+  - Organização em pastas por entidade
+  - Validações de segurança e tipo
 
-**Futuro**
-
-- **Versionamento** de arquivos e **antivírus** (ex.: clamd).
+**Configuração via variáveis de ambiente:**
+- `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`
+- `GDRIVE_REFRESH_TOKEN`
+- `GDRIVE_CLIENTS_FOLDER_ID`, `GDRIVE_PERDCOMPS_FOLDER_ID`
 
 ---
 
 ## Escalabilidade
 
-**Futuro**
+**Arquitetura atual**: Single-tenant com design preparado para multi-tenant futuro.
 
-- **Multi-tenant** (fora do MVP, manter design preparado para evolução).
-
----
-
-## Definições de Escopo Extra (MVP)
-
-- Serviço de **e-mail** (e opcionalmente SMS no futuro).
-- **Servidor de arquivos** (local dev, S3 prod).
-- **Eventos** para ações assíncronas e registro de auditoria (ex.: `changeClientCnpjCommand -> Requested by userX`).
-- Suporte a autenticação, autorização, **cache** (quando aplicável) e logs.
-- Possível **firewall** adicional no futuro.
+**Tecnologias implementadas**:
+- PostgreSQL para produção (via Render.com)
+- SQLite para desenvolvimento
+- WhiteNoise para arquivos estáticos
+- Django 5.x com DRF para API
 
 ---
 
 ## Front-End
 
-- Backend **API-first**.
-- Frontend principal em **React** (fora do escopo do backend).
-- No Django, a única interface prevista é o **Admin BackOffice**.
+**Arquitetura API-first** implementada:
+- **OpenAPI/Swagger**: Documentação completa via `drf-spectacular`
+- **Endpoints RESTful**: Padronizados com filtros, paginação, busca
+- **CORS configurado**: Para integração com frontend React futuro
+
+**Interface atual**: Django Admin como única interface visual.
 
 ---
 
-## Foco Principal
+## Foco Principal Realizado
 
-- Visualização e controle eficientes de **Clientes** e **PER/DCOMPs**.
-- **Autenticação** fluída e **autorização** robusta.
-- **Auditoria completa**, com rastreabilidade por usuário.
-- Priorizar **performance do workflow** e **custo zero/baixo** (open-source/free tier) sempre que possível.
+✅ **Visualização e controle eficientes** de Clientes e PER/DCOMPs  
+✅ **Autenticação fluída** com JWT + 2FA TOTP  
+✅ **Autorização robusta** via RBAC com Django Groups  
+✅ **Auditoria completa** com rastreabilidade por usuário e correlation ID  
+✅ **Sistema de aprovações** para mudanças sensíveis  
+✅ **Interface administrativa moderna** com django-jazzmin  
+✅ **Integração Google Drive** para armazenamento de arquivos  
+✅ **Deploy automatizado** no Render.com  
+
+---
+
+## Tecnologias Implementadas vs Planejadas
+
+### ✅ Implementadas
+- Django 5.x + DRF
+- PostgreSQL (prod) + SQLite (dev) 
+- JWT Authentication (djangorestframework-simplejwt)
+- Google Drive API (OAuth 2.0)
+- django-jazzmin (admin theme)
+- WhiteNoise (static files)
+- drf-spectacular (OpenAPI)
+- django-otp (2FA)
+- Render.com (deploy)
+
+### ❌ Removidas/Não implementadas no MVP
+- **~~Redis/Celery~~**: Dependências presentes mas não ativadas
+- **~~Sentry~~**: Configurado mas opcional via `SENTRY_DSN`
+- **~~AWS S3~~**: Substituído por Google Drive API
+- **~~SMTP Email~~**: Não implementado no MVP
+- **~~BrasilAPI CNPJ~~**: Planejado para versões futuras
+
+### 🔄 Configuradas mas não ativas
+- Celery + Redis (em requirements, não configurado)
+- Sentry (configurado, ativação via ENV)
+- Email backends (configuração presente, não utilizada)
+
+---
+
+## Comandos de Desenvolvimento
+
+O sistema inclui comandos personalizados para facilitar setup e manutenção:
+
+```bash
+# Setup inicial
+make up                    # Docker containers
+make migrate               # Aplicar migrações
+make setup-roles           # Configurar roles
+make superuser             # Criar superusuário com role
+
+# Comandos diretos Django
+python manage.py create_superuser_with_role
+python manage.py setup_roles
+python manage.py migrate_users
+```
+
+---
+
+## Observações de Implementação
+
+- **Public IDs**: Todas as entidades usam UUIDs como identificadores públicos
+- **Soft Delete**: Implementado em User, Client, PerDcomp
+- **Approval System**: Funciona via decorators e mixins em ViewSets
+- **Google Drive**: Integração transparente com validações de segurança
+- **Admin Interface**: Completamente customizado com inlines e filtros
+- **API Documentation**: Gerada automaticamente com exemplos
+- **Health Monitoring**: Endpoints para liveness e readiness checks
+
+O sistema está **funcionalmente completo** para gestão de clientes e documentos tributários, com todas as features de segurança, auditoria e aprovação implementadas.

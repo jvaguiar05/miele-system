@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status
 from rest_framework.parsers import JSONParser
+from rest_framework.permissions import AllowAny
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
@@ -74,6 +75,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     Suporta throttling agressivo contra ataques de força bruta.
     """
 
+    permission_classes = [AllowAny]  # Open to public for login
+
     throttle_classes = [AuthLoginThrottle, FailedLoginAttemptThrottle]
     serializer_class = CustomTokenObtainPairSerializer
 
@@ -143,6 +146,8 @@ class CustomTokenRefreshView(TokenRefreshView):
     Endpoint para renovação de tokens JWT.
     Utiliza o refresh token para gerar novo access token.
     """
+
+    permission_classes = [AllowAny]  # Open to public for token refresh
 
     throttle_classes = [AuthRefreshThrottle]
 
@@ -778,6 +783,8 @@ class UserRegistrationView(APIView):
     Endpoint para registro de novos usuários no sistema.
     Aplica throttling restritivo e requer aprovação administrativa.
     """
+
+    permission_classes = [AllowAny]  # Open to public for registration
 
     serializer_class = UserRegistrationSerializer
     throttle_classes = [AuthRegisterThrottle]  # Restrictive throttling for registration
