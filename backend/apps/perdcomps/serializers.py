@@ -117,6 +117,18 @@ class PerDcompSerializer(serializers.ModelSerializer):
             "pode_ser_editado",
             "pode_ser_cancelado",
         ]
+        extra_kwargs = {
+            'numero': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'processo_protocolo': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'data_competencia': {'required': False, 'allow_null': True},
+            'competencia': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'valor_compensado': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'valor_recebido': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'valor_saldo': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'valor_selic': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'status': {'required': False},
+            'is_active': {'required': False},
+        }
 
     def validate_client_cnpj(self, value):
         """Validar e converter client_cnpj para client_id."""

@@ -82,6 +82,6 @@ services:
 databases:
   - name: miele-staging-db
     plan: free
-    databaseName: miele_staging
+    databaseName: miele_staging_db
     user: miele_staging
     region: oregon

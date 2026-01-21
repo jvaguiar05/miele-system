@@ -14,5 +14,8 @@ model-bakery>=1.17,<2.0   # ou factory_boy
 # Typings (opcional)
 types-requests>=2.32,<3.0
 
-# Tooling
-pip-tools>=7.4,<8.0
+# Openpyxl
+openpyxl>=3.0,<3.2
+
+# Pandas
+pandas>=2.0,<2.4
