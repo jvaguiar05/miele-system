@@ -56,37 +56,24 @@ setup_database:
 		--last-name Admin \
 		--password mieleadminadmin
 	cd backend && python manage.py setup_test_user
+	cd backend && python manage.py migrate_clients
+	cd backend && python manage.py migrate_perdcomps
 
 # ---- Data Import ----
 
-import-excel:
-	cd backend && python manage.py import_excel_data --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+import_excel:
+	cd backend && python manage.py migrate_clients
+	cd backend && python manage.py migrate_perdcomps
 
-import-clients:
-	cd backend && python manage.py import_excel_data --skip-perdcomps --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+import_clients:
+	cd backend && python manage.py migrate_clients
 
-import-perdcomps:
-	cd backend && python manage.py import_excel_data --skip-clients --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+import_perdcomps:
+	cd backend && python manage.py migrate_perdcomps
 
-import-dry:
-	cd backend && python manage.py import_excel_data --dry-run --file "C:/Users/jvads/Compasse/miele-system/$(file)"
-
-import-quiet:
-	cd backend && python manage.py import_excel_data --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
-
-import-clients-quiet:
-	cd backend && python manage.py import_excel_data --skip-perdcomps --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
-
-import-perdcomps-quiet:
-	cd backend && python manage.py import_excel_data --skip-clients --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
-
-# ---- Data Analysis ----
-
-find-duplicates:
-	cd backend && python manage.py find_duplicate_perdcomps --file "C:/Users/jvads/Compasse/miele-system/$(file)"
-
-find-duplicates-quiet:
-	cd backend && python manage.py find_duplicate_perdcomps --quiet --file "C:/Users/jvads/Compasse/miele-system/$(file)"
+import_dry:
+	cd backend && python manage.py migrate_clients --dry-run
+	cd backend && python manage.py migrate_perdcomps --dry-run
 
 # ---- Quality ----
 
