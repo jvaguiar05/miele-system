@@ -5,11 +5,12 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
 from django.db import models
 from django.db.models import Sum, Count, Q
 from decimal import Decimal, InvalidOperation
+from django.http import Http404
 
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
@@ -24,6 +25,7 @@ from .serializers import (
     PerDcompSensitiveSerializer,
     PerDcompAnnotationSerializer,
 )
+from .services import PerDcompExcelExporter
 
 
 class PingView(APIView):
@@ -287,8 +289,197 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
             status=status.HTTP_202_ACCEPTED,
         )
 
+    @extend_schema(
+        tags=["PER/DCOMPs"],
+        summary="Exportar PER/DCOMPs para Excel",
+        description="""Gera um arquivo Excel (.xlsx) avançado com dados de PER/DCOMPs filtrados.
+        
+        **Parâmetros obrigatórios:**
+        - client_cnpj: CNPJ do cliente (formato: 00.000.000/0000-00)
+        
+        **Parâmetros opcionais:**
+        - status: Filtro por status específico
+        - search: Busca textual (número, protocolo, tributo, etc.)
+        - optimize_size: Otimizar para tamanho de arquivo (padrão: true)
+        
+        **Recursos avançados do arquivo gerado:**
+        - 📊 **Planilha principal**: Dados formatados com tabela Excel interativa
+        - 🎯 **Formatação condicional**: Cores automáticas baseadas em valores
+        - ⏰ **Coluna "Dias até Vencimento"**: Com indicadores visuais de urgência
+        - � **Planilha de resumo**: Estatísticas executivas e métricas principais
+        - 📊 **Análise de status**: Breakdown detalhado com percentuais e valores
+        - 🎨 **Visual profissional**: Formatação empresarial moderna
+        
+        **Exemplo de uso:**
+        - `/api/v1/perdcomps/export-excel/?client_public_id=550e8400-e29b-41d4-a716-446655440000`
+        - `/api/v1/perdcomps/export-excel/?client_public_id=550e8400-e29b-41d4-a716-446655440000&status=TRANSMITIDO`
+        - `/api/v1/perdcomps/export-excel/?client_public_id=550e8400-e29b-41d4-a716-446655440000&search=COFINS&optimize_size=true`
+        """,
+        parameters=[
+            OpenApiParameter(
+                name="client_public_id",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description="ID público do cliente (UUID)",
+                examples=[OpenApiExample("UUID válido", value="550e8400-e29b-41d4-a716-446655440000")],
+            ),
+            OpenApiParameter(
+                name="status",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Filtro por status específico",
+                enum=[
+                    "RASCUNHO",
+                    "TRANSMITIDO",
+                    "EM_PROCESSAMENTO",
+                    "DEFERIDO",
+                    "INDEFERIDO",
+                    "PARCIALMENTE_DEFERIDO",
+                    "CANCELADO",
+                    "VENCIDO",
+                ],
+            ),
+            OpenApiParameter(
+                name="search",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Busca textual em número, protocolo, tributo, competência",
+                examples=[
+                    OpenApiExample("Busca por tributo", value="COFINS"),
+                    OpenApiExample("Busca por número", value="123/45"),
+                ],
+            ),
+            OpenApiParameter(
+                name="optimize_size",
+                type=bool,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="Otimizar arquivo para tamanho menor (remove formatação avançada, padrão: true)",
+                examples=[
+                    OpenApiExample("Tamanho otimizado", value=True),
+                    OpenApiExample("Qualidade máxima", value=False),
+                ],
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                description="Arquivo Excel gerado com sucesso",
+                response={"type": "string", "format": "binary"},
+                examples=[
+                    OpenApiExample(
+                        "Download Excel",
+                        description="Arquivo .xlsx para download",
+                    )
+                ],
+            ),
+            400: OpenApiResponse(
+                description="Parâmetros inválidos",
+                examples=[
+                    OpenApiExample(
+                        "Parâmetro obrigatório",
+                        value={"error": "Parameter 'client_public_id' is required"},
+                    ),
+                    OpenApiExample(
+                        "UUID inválido",
+                        value={
+                            "error": "Invalid client_public_id format. Must be a valid UUID"
+                        },
+                    ),
+                ],
+            ),
+            404: OpenApiResponse(
+                description="Cliente não encontrado ou sem PER/DCOMPs",
+                examples=[
+                    OpenApiExample(
+                        "Cliente não existe",
+                        value={
+                            "error": "Client with CNPJ 01.562.539/0001-05 not found"
+                        },
+                    ),
+                    OpenApiExample(
+                        "Sem dados para exportar",
+                        value={
+                            "error": "No PER/DCOMPs found for the specified client and filters"
+                        },
+                    ),
+                ],
+            ),
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="export-excel")
+    def export_excel(self, request):
+        """Export PER/DCOMPs to Excel file for a specific client."""
 
+        # Validate required parameter
+        client_public_id = request.query_params.get("client_public_id")
+        if not client_public_id:
+            return Response(
+                {"error": "Parameter 'client_public_id' is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
+        # Validate UUID format
+        try:
+            import uuid
+            uuid.UUID(client_public_id)
+        except ValueError:
+            return Response(
+                {"error": "Invalid client_public_id format. Must be a valid UUID"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Verify client exists and get client data
+        from apps.clients.models import Client
+
+        try:
+            client = Client.objects.get(public_id=client_public_id, deleted_at__isnull=True)
+        except Client.DoesNotExist:
+            return Response(
+                {"error": f"Client with public_id {client_public_id} not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Start with base queryset filtered by client CNPJ
+        queryset = self.get_queryset().filter(cnpj=client.cnpj)
+
+        # Apply additional filters from query parameters
+        # Reuse the same filtering logic as the list view
+        queryset = self.filter_queryset(queryset)
+
+        # Check if we have any data to export
+        if not queryset.exists():
+            return Response(
+                {"error": "No PER/DCOMPs found for the specified client and filters"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Collect applied filters for metadata
+        applied_filters = {
+            "client_public_id": client_public_id,
+            "status": request.query_params.get("status"),
+            "search": request.query_params.get("search"),
+            "tributo_pedido": request.query_params.get("tributo_pedido"),
+        }
+
+        # Filter out empty values
+        applied_filters = {k: v for k, v in applied_filters.items() if v}
+
+        # Parse enhanced options
+        optimize_size = (
+            request.query_params.get("optimize_size", "true").lower() == "true"
+        )
+
+        # Generate Excel file with enhanced options
+        exporter = PerDcompExcelExporter()
+        return exporter.export_to_excel(
+            queryset=queryset,
+            client_cnpj=client.cnpj,  # Pass actual CNPJ for filename and client info
+            applied_filters=applied_filters,
+            optimize_for_size=optimize_size,
+        )
 
 
 @extend_schema(
