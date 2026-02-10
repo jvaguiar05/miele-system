@@ -29,3 +29,4 @@ google-auth-httplib2>=0.1.0,<1.0
 google-auth-oauthlib>=1.0.0,<2.0
 whitenoise>=6.6,<7.0             # Servir arquivos estáticos em produção
 dj-database-url>=2.1,<3.0        # Parsing simples da URL do banco do Render
+openpyxl>=3.1,<4.0              # Manipulação de arquivos Excel

@@ -96,6 +96,8 @@ djangorestframework-simplejwt==5.5.1
     # via -r requirements/base.in
 drf-spectacular==0.27.2
     # via -r requirements/base.in
+et-xmlfile==2.0.0
+    # via openpyxl
 google-api-core==2.28.1
     # via google-api-python-client
 google-api-python-client==2.187.0
@@ -142,6 +144,8 @@ kombu==5.5.4
     # via celery
 oauthlib==3.3.1
     # via requests-oauthlib
+openpyxl==3.1.5
+    # via -r requirements/base.in
 packaging==25.0
     # via
     #   gunicorn
