@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.contenttypes.models import ContentType
+from . import services as client_services
 from .models import Client, Address
 from common.shared.models import Annotation
 from common.shared.serializers import (
@@ -245,6 +246,9 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Criar cliente com endereço automaticamente."""
+        if validated_data.get("cnpj"):
+            validated_data = client_services.enrich_client_data_with_cnpj(validated_data)
+
         # Extrair dados do endereço
         address_fields = [
             "logradouro",
@@ -282,6 +286,9 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """Atualizar cliente e endereço automaticamente."""
+        if validated_data.get("cnpj"):
+            validated_data = client_services.enrich_client_data_with_cnpj(validated_data)
+
         # Extrair dados do endereço
         address_fields = [
             "logradouro",

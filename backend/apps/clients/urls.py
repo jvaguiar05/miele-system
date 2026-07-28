@@ -27,5 +27,10 @@ urlpatterns = [
         ),
         name="client-annotation-detail",
     ),
+    path(
+        "lookup-cnpj/",
+        ClientViewSet.as_view({"get": "lookup_cnpj"}),
+        name="client-lookup-cnpj",
+    ),
     path("", include(router.urls)),
 ]
