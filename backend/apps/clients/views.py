@@ -324,6 +324,79 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
             status=status.HTTP_202_ACCEPTED,
         )
 
+    @extend_schema(
+        tags=["Clientes"],
+        summary="Buscar dados de CNPJ na BrasilAPI",
+        description="Busca dados de CNPJ na BrasilAPI e retorna formatado para preencher o formulário. Use como pré-consulta antes de criar/editar cliente.",
+        parameters=[
+            {
+                "name": "cnpj",
+                "in": "query",
+                "description": "CNPJ a buscar (com ou sem formatação)",
+                "required": True,
+                "schema": {"type": "string", "example": "01.166.372/0001-55"},
+            }
+        ],
+        responses={
+            200: OpenApiResponse(
+                description="Dados do CNPJ encontrados",
+                examples=[
+                    OpenApiExample(
+                        "Resposta com dados do CNPJ",
+                        value={
+                            "nome": "Empresa LTDA",
+                            "fantasia": "Fantasia da Empresa",
+                            "natureza_juridica": "Sociedade Empresária Limitada",
+                            "logradouro": "Rua X",
+                            "numero": "123",
+                            "complemento": "Apt 456",
+                            "bairro": "Centro",
+                            "municipio": "São Paulo",
+                            "uf": "SP",
+                            "cep": "01234-567",
+                            "email": "contato@empresa.com",
+                            "telefone": "11999999999",
+                            "atividades": [
+                                {"cnae": "6201-5/00", "descricao": "Desenvolvimento de software"}
+                            ],
+                            "qsa": [
+                                {"nome": "João Silva", "cargo": "Sócio-Administrador"}
+                            ],
+                            "ultima_atualizacao": "2024-01-15T10:30:00Z",
+                        },
+                    )
+                ],
+            ),
+            400: OpenApiResponse(description="CNPJ inválido ou não encontrado"),
+            401: OpenApiResponse(description="Usuário não autenticado"),
+        },
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="lookup-cnpj",
+        permission_classes=[IsAuthenticated],
+    )
+    def lookup_cnpj(self, request):
+        """
+        Buscar dados de CNPJ na BrasilAPI.
+        GET /api/v1/clients/clients/lookup-cnpj/?cnpj=01.166.372/0001-55
+        """
+        from . import services as client_services
+
+        cnpj = request.query_params.get("cnpj")
+        if not cnpj:
+            return Response(
+                {"error": "Parâmetro 'cnpj' é obrigatório."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            data = client_services.lookup_cnpj_data(cnpj)
+            return Response(data, status=status.HTTP_200_OK)
+        except serializers.ValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+
 
 @extend_schema(
     tags=["Clientes - Anotações"],

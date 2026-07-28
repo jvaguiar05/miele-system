@@ -10,6 +10,7 @@ router.register(r"clients", ClientViewSet, basename="client")
 
 # Custom paths for nested resources
 urlpatterns = [
+    path("", include(router.urls)),
     # Annotations with client_id as parameter
     path(
         "annotations/by-client/<uuid:client_id>/",
@@ -27,5 +28,9 @@ urlpatterns = [
         ),
         name="client-annotation-detail",
     ),
-    path("", include(router.urls)),
+    path(
+        "lookup-cnpj/",
+        ClientViewSet.as_view({"get": "lookup_cnpj"}),
+        name="client-lookup-cnpj",
+    ),
 ]

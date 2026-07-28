@@ -411,5 +411,13 @@ GDRIVE_MAX_FILE_SIZE = env(
 
 GDRIVE_API_TIMEOUT = env("GDRIVE_API_TIMEOUT", default=30, cast=int)  # seconds
 
-# Rate limiting for Google Drive API
+# Google Drive rate limiting
 GDRIVE_REQUESTS_PER_MINUTE = env("GDRIVE_REQUESTS_PER_MINUTE", default=600, cast=int)
+
+# BrasilAPI CNPJ integration
+BRASILAPI_CNPJ_BASE_URL = env(
+    "BRASILAPI_CNPJ_BASE_URL",
+    default="https://brasilapi.com.br/api/cnpj/v1",
+    cast=str,
+)
+BRASILAPI_TIMEOUT = env("BRASILAPI_TIMEOUT", default=10, cast=int)
