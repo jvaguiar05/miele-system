@@ -97,10 +97,10 @@ def _normalize_activity(activity: Any) -> dict[str, str]:
     if isinstance(activity, dict):
         return {
             "cnae": str(
-                activity.get("code")
+                activity.get("cnae")
+                or activity.get("code")
                 or activity.get("codigo")
                 or activity.get("cnae_fiscal")
-                or activity.get("codigo")
                 or ""
             ).strip(),
             "descricao": str(
