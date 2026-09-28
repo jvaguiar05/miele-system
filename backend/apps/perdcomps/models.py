@@ -99,7 +99,7 @@ class PerDcomp(models.Model):
     status = models.CharField(
         max_length=30,
         choices=Status.choices,
-        default=Status.RASCUNHO,
+        default=Status.TRANSMITIDO,
         help_text="Status atual do PER/DCOMP",
     )
 

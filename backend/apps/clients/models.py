@@ -6,6 +6,24 @@ import uuid
 User = get_user_model()
 
 
+class QuarterSnapshot(models.Model):
+    """Stored positions are append-only through the application API."""
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    year = models.PositiveSmallIntegerField()
+    quarter = models.PositiveSmallIntegerField()
+    kind = models.CharField(max_length=10, choices=[("position", "Posição parcial"), ("closing", "Fechamento")])
+    captured_at = models.DateTimeField(default=timezone.now)
+    captured_by = models.CharField(max_length=255)
+    note = models.TextField(blank=True)
+    payload = models.JSONField()
+
+    class Meta:
+        ordering = ["-captured_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["year", "quarter"], condition=models.Q(kind="closing"), name="one_closing_per_quarter"),
+        ]
+
+
 class Address(models.Model):
     """
     Modelo para endereços.
@@ -219,3 +237,28 @@ class Client(models.Model):
             )
 
         self.save()
+
+
+class ClientContract(models.Model):
+    """Percentual contratual por vigência; cálculos são apenas informativos."""
+
+    __audit__ = True
+    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="contracts")
+    percentage = models.DecimalField(max_digits=7, decimal_places=4)
+    starts_on = models.DateField()
+    ends_on = models.DateField(null=True, blank=True)
+    reference = models.CharField(max_length=120, blank=True)
+    notes = models.TextField(blank=True)
+    billing_evolution_requested = models.BooleanField(default=False)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_client_contracts")
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "client_contracts"
+        ordering = ["-starts_on", "-id"]
+        indexes = [models.Index(fields=["client", "starts_on", "ends_on"])]
+
+    def __str__(self):
+        return f"{self.client} - {self.percentage}% desde {self.starts_on}"

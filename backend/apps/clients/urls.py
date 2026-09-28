@@ -4,12 +4,15 @@ from .views import (
     ClientViewSet,
     ClientAnnotationViewSet,
 )
+from .contract_views import client_contracts, client_contract_detail
 
 router = DefaultRouter()
 router.register(r"clients", ClientViewSet, basename="client")
 
 # Custom paths for nested resources
 urlpatterns = [
+    path("<uuid:client_id>/contracts/", client_contracts, name="client-contracts"),
+    path("<uuid:client_id>/contracts/<uuid:contract_id>/", client_contract_detail, name="client-contract-detail"),
     path("", include(router.urls)),
     # Annotations with client_id as parameter
     path(

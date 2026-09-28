@@ -1,6 +1,10 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import PerDcomp
+from .deadlines import automatic_due_date
+from django.utils import timezone
+from django.db import transaction
+from common.audit.services import AuditService
 from common.shared.models import Annotation
 from common.shared.serializers import (
     AnnotationSerializer,
@@ -49,6 +53,48 @@ class PerDcompSerializer(serializers.ModelSerializer):
     """Serializer completo para PerDcomp."""
 
     id = serializers.UUIDField(source="public_id", read_only=True)
+    recalculate_due_date = serializers.BooleanField(write_only=True, required=False, default=False)
+    due_date_reason = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=1000)
+
+    def validate(self, attrs):
+        requested_status = attrs.get("status")
+        if requested_status == PerDcomp.Status.RASCUNHO and not (
+            self.instance and self.instance.status == PerDcomp.Status.RASCUNHO
+        ):
+            raise serializers.ValidationError({"status": "Rascunho é um status histórico e não pode mais ser selecionado."})
+        if not self.instance:
+            attrs.setdefault("status", PerDcomp.Status.TRANSMITIDO)
+        recalculate = attrs.pop("recalculate_due_date", False)
+        reason = attrs.get("due_date_reason", "").strip()
+        transmission = attrs.get("data_transmissao", self.instance.data_transmissao if self.instance else timezone.localdate())
+        if not self.instance:
+            attrs.setdefault("data_transmissao", transmission)
+        expected = automatic_due_date(transmission)
+        if recalculate or ("data_vencimento" not in attrs and (not self.instance or "data_transmissao" in attrs)):
+            attrs["data_vencimento"] = expected
+        due = attrs.get("data_vencimento")
+        changed = due is not None and (not self.instance or due != self.instance.data_vencimento)
+        if changed and due != expected and not reason:
+            raise serializers.ValidationError({"due_date_reason": "Justifique o vencimento diferente do cálculo automático."})
+        return attrs
+
+    def record_due_reason(self, instance, reason, previous=None):
+        if reason:
+            AuditService.log_action("CUSTOM", instance, user=self.context["request"].user,
+                old_data={"data_vencimento": previous.isoformat() if previous else None},
+                new_data={"data_vencimento": instance.data_vencimento.isoformat()},
+                metadata={"type": "due_date_override", "reason": reason})
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        reason = validated_data.pop("due_date_reason", "")
+        previous = instance.data_vencimento
+        client = validated_data.pop("client_cnpj", None)
+        if client:
+            validated_data.update(client_id=client.id, cnpj=client.cnpj)
+        instance = super().update(instance, validated_data)
+        self.record_due_reason(instance, reason, previous)
+        return instance
     client_cnpj = serializers.CharField(
         write_only=True, help_text="CNPJ do cliente para vinculação"
     )
@@ -90,6 +136,8 @@ class PerDcompSerializer(serializers.ModelSerializer):
             "processo_protocolo",
             "data_transmissao",
             "data_vencimento",
+            "recalculate_due_date",
+            "due_date_reason",
             "data_competencia",
             "tributo_pedido",
             "competencia",
@@ -153,17 +201,21 @@ class PerDcompSerializer(serializers.ModelSerializer):
                 f"Cliente com CNPJ '{value}' não encontrado."
             )
 
+    @transaction.atomic
     def create(self, validated_data):
         """Criar PerDcomp com created_by_id e cnpj automaticamente."""
         # Get client from validated client_cnpj
         client = validated_data.pop("client_cnpj")
+        reason = validated_data.pop("due_date_reason", "")
 
         # Set the client_id and cnpj from the found client
         validated_data["client_id"] = client.id
         validated_data["cnpj"] = client.cnpj
         validated_data["created_by_id"] = self.context["request"].user.id
 
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+        self.record_due_reason(instance, reason)
+        return instance
 
 
 class PerDcompBasicSerializer(serializers.ModelSerializer):
@@ -191,6 +243,13 @@ class PerDcompSensitiveSerializer(serializers.ModelSerializer):
     """Serializer para campos sensíveis (requer aprovação)."""
 
     id = serializers.UUIDField(source="public_id", read_only=True)
+
+    def validate_status(self, value):
+        if value == PerDcomp.Status.RASCUNHO and not (
+            self.instance and self.instance.status == PerDcomp.Status.RASCUNHO
+        ):
+            raise serializers.ValidationError("Rascunho é um status histórico e não pode mais ser selecionado.")
+        return value
 
     class Meta:
         model = PerDcomp
