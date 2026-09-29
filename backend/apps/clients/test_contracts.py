@@ -33,7 +33,17 @@ class ClientContractTests(TestCase):
         self.assertEqual(newest["totals"]["requested"], {"base": "2000.00", "calculated": "400.00"})
         self.assertEqual(newest["totals"]["compensated"], {"base": "1000.00", "calculated": "200.00"})
         self.assertEqual(newest["totals"]["received"], {"base": "500.00", "calculated": "100.00"})
+        self.assertEqual(newest["totals"]["contractual"], {"base": "1500.00", "calculated": "300.00", "formula": "valor_compensado + valor_recebido"})
+        self.assertEqual(newest["calculation_basis"], "compensated_plus_received")
         self.assertTrue(newest["billing_evolution_requested"])
+
+    def test_contractual_base_treats_empty_values_as_zero(self):
+        self.process(date(2026, 1, 15), "999", "", "250,50")
+        created = self.api.post(self.url, {"percentage": "10", "starts_on": "2026-01-01"}, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        result = self.api.get(self.url).data["contracts"][0]
+        self.assertEqual(result["totals"]["contractual"]["base"], "250.50")
+        self.assertEqual(result["totals"]["contractual"]["calculated"], "25.05")
 
     def test_overlap_invalid_dates_and_uncovered(self):
         self.process(date(2025, 12, 31), "100")

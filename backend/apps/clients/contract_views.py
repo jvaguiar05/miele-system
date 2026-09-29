@@ -58,12 +58,19 @@ def contract_data(contract, processes):
     for field, name in [("valor_pedido", "requested"), ("valor_compensado", "compensated"), ("valor_recebido", "received")]:
         base = sum((money(getattr(p, field)) for p in applicable), Decimal("0"))
         totals[name] = {"base": decimal_string(base), "calculated": decimal_string(base * rate)}
+    contractual_base = Decimal(totals["compensated"]["base"]) + Decimal(totals["received"]["base"])
+    totals["contractual"] = {
+        "base": decimal_string(contractual_base),
+        "calculated": decimal_string(contractual_base * rate),
+        "formula": "valor_compensado + valor_recebido",
+    }
     return {
         "id": str(contract.public_id), "percentage": str(contract.percentage),
         "starts_on": contract.starts_on.isoformat(), "ends_on": contract.ends_on.isoformat() if contract.ends_on else None,
         "reference": contract.reference, "notes": contract.notes,
         "billing_evolution_requested": contract.billing_evolution_requested,
-        "mode": "informational", "process_count": len(applicable), "totals": totals,
+        "mode": "informational", "calculation_basis": "compensated_plus_received",
+        "process_count": len(applicable), "totals": totals,
     }
 
 
