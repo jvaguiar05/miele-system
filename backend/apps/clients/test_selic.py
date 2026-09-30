@@ -65,3 +65,18 @@ class SelicReportTests(TestCase):
         self.assertFalse(self.api.get(self.url).data["can_edit"])
         self.assertEqual(self.api.post(self.url + "import/preview/", {"file": self._pdf()}, format="multipart").status_code, 403)
         self.assertEqual(self.api.patch(f"{self.url}{report.public_id}/2026/9/", {"rate": "1", "reason": "Sem permissão"}).status_code, 403)
+
+    @patch("apps.clients.selic_views.drive_service.upload_stream", side_effect=Exception("drive unavailable"))
+    @patch("apps.clients.selic_views.settings.GDRIVE_CLIENT_ID", "client")
+    @patch("apps.clients.selic_views.settings.GDRIVE_CLIENT_SECRET", "secret")
+    @patch("apps.clients.selic_views.settings.GDRIVE_REFRESH_TOKEN", "token")
+    @patch("apps.clients.selic_views.parse_accumulated_pdf")
+    def test_drive_failure_returns_clear_error_without_saving(self, parser, _upload):
+        parser.return_value = {"report_type": "selic_accumulated_payment", "reference_year": 2026, "reference_month": 10,
+            "issued_on": "2026-10-25", "source": "Sicalc", "page_count": 4, "value_count": 1, "blank_count": 3,
+            "values": {"2026-10": "0.00"}, "sha256": "b" * 64}
+        preview = self.api.post(self.url + "import/preview/", {"file": self._pdf()}, format="multipart")
+        confirmed = self.api.post(self.url + "import/confirm/", {"token": preview.data["token"]}, format="json")
+        self.assertEqual(confirmed.status_code, 502)
+        self.assertIn("Google Drive", confirmed.data["detail"])
+        self.assertFalse(SelicAccumulatedReport.objects.filter(reference_month=10).exists())

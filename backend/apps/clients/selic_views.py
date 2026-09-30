@@ -10,6 +10,8 @@ from django.db.models import Max
 from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from google.auth.exceptions import RefreshError
+from googleapiclient.errors import HttpError
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
@@ -107,7 +109,18 @@ def selic_import_confirm(request):
         return Response({"token": ["Este PDF já foi importado."]}, status=409)
     content = base64.b64decode(payload["content"])
     drive_ready = all(getattr(settings, name, None) for name in ("GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN"))
-    file_id = drive_service.upload_stream(io.BytesIO(content), payload["filename"], "selic", "application/pdf") if drive_ready else ""
+    try:
+        file_id = drive_service.upload_stream(io.BytesIO(content), payload["filename"], "selic", "application/pdf") if drive_ready else ""
+    except HttpError as exc:
+        if getattr(exc, "resp", None) is not None and exc.resp.status == 404:
+            message = "A pasta Selic não foi encontrada ou a conta Google do Miele não possui acesso a ela. Confira GDRIVE_SELIC_FOLDER_ID e o compartilhamento da pasta."
+        else:
+            message = "O Google Drive recusou o envio do PDF. Confira a pasta e as credenciais do Miele."
+        return Response({"detail": message}, status=status.HTTP_502_BAD_GATEWAY)
+    except RefreshError:
+        return Response({"detail": "A autorização do Google Drive expirou. Renove o refresh token configurado no backend."}, status=status.HTTP_502_BAD_GATEWAY)
+    except Exception:
+        return Response({"detail": "Não foi possível armazenar o PDF no Google Drive. Confira a configuração da pasta Selic."}, status=status.HTTP_502_BAD_GATEWAY)
     with transaction.atomic():
         same = SelicAccumulatedReport.objects.select_for_update().filter(reference_year=parsed["reference_year"], reference_month=parsed["reference_month"])
         version = (same.aggregate(value=Max("version"))["value"] or 0) + 1; same.update(is_active=False)
