@@ -27,6 +27,7 @@ class GoogleDriveService:
         self.folder_map = {
             "client": getattr(settings, "GDRIVE_CLIENTS_FOLDER_ID", None),
             "perdcomp": getattr(settings, "GDRIVE_PERDCOMPS_FOLDER_ID", None),
+            "selic": getattr(settings, "GDRIVE_SELIC_FOLDER_ID", None),
         }
 
     def _get_service(self):

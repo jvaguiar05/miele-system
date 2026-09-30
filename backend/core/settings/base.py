@@ -402,6 +402,7 @@ GDRIVE_REFRESH_TOKEN = env("GDRIVE_REFRESH_TOKEN", default=None, cast=str)
 
 # Folder structure in Google Drive
 GDRIVE_CLIENTS_FOLDER_ID = env("GDRIVE_CLIENTS_FOLDER_ID", default=None, cast=str)
+GDRIVE_SELIC_FOLDER_ID = env("GDRIVE_SELIC_FOLDER_ID", default=None, cast=str)
 GDRIVE_PERDCOMPS_FOLDER_ID = env("GDRIVE_PERDCOMPS_FOLDER_ID", default=None, cast=str)
 
 # File size limits and timeouts

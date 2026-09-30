@@ -53,6 +53,8 @@ services:
         sync: false
       - key: GDRIVE_PERDCOMPS_FOLDER_ID
         sync: false
+      - key: GDRIVE_SELIC_FOLDER_ID
+        sync: false
 
       - key: GDRIVE_MAX_FILE_SIZE
         value: "104857600"

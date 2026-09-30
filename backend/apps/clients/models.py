@@ -264,23 +264,50 @@ class ClientContract(models.Model):
         return f"{self.client} - {self.percentage}% desde {self.starts_on}"
 
 
-class SelicAccumulatedRate(models.Model):
-    """Sicalc accumulated rate indexed by the debt due month/year."""
+class SelicAccumulatedReport(models.Model):
+    """Immutable version of an official Sicalc accumulated-rate report."""
 
     __audit__ = True
+    public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    reference_year = models.PositiveSmallIntegerField()
+    reference_month = models.PositiveSmallIntegerField()
+    version = models.PositiveSmallIntegerField(default=1)
+    issued_on = models.DateField()
+    source = models.CharField(max_length=255, default="Sicalc - Receita Federal")
+    original_file_name = models.CharField(max_length=255)
+    original_file_id = models.CharField(max_length=255, blank=True)
+    original_content = models.BinaryField(null=True, blank=True, editable=False)
+    file_sha256 = models.CharField(max_length=64, unique=True)
+    extracted_data = models.JSONField(default=dict)
+    value_count = models.PositiveIntegerField(default=0)
+    blank_count = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    imported_by = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name="imported_selic_reports")
+    imported_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "selic_accumulated_reports"
+        ordering = ["-reference_year", "-reference_month", "-version"]
+        constraints = [models.UniqueConstraint(fields=["reference_year", "reference_month", "version"], name="unique_selic_report_version")]
+
+
+class SelicAccumulatedRate(models.Model):
+    """Rate for one origin period, always tied to a report version."""
+
+    __audit__ = True
+    report = models.ForeignKey(SelicAccumulatedReport, on_delete=models.CASCADE, related_name="rates")
     year = models.PositiveSmallIntegerField()
     month = models.PositiveSmallIntegerField()
     rate = models.DecimalField(max_digits=8, decimal_places=2)
-    source = models.CharField(max_length=255, default="Sicalc - Receita Federal")
-    issued_on = models.DateField(null=True, blank=True)
-    updated_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="updated_selic_rates")
-    updated_at = models.DateTimeField(auto_now=True)
+    correction_reason = models.TextField(blank=True)
+    corrected_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="corrected_selic_rates")
+    corrected_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "selic_accumulated_rates"
-        ordering = ["year", "month"]
+        ordering = ["report", "year", "month"]
         constraints = [
-            models.UniqueConstraint(fields=["year", "month"], name="unique_selic_accumulated_month"),
+            models.UniqueConstraint(fields=["report", "year", "month"], name="unique_selic_report_month"),
             models.CheckConstraint(condition=models.Q(month__gte=1, month__lte=12), name="selic_valid_month"),
             models.CheckConstraint(condition=models.Q(rate__gte=0), name="selic_nonnegative_rate"),
         ]

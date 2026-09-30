@@ -1,59 +1,67 @@
 from decimal import Decimal
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
-from .models import SelicAccumulatedRate
+
+from .models import SelicAccumulatedRate, SelicAccumulatedReport
 
 
-class SelicRateTests(TestCase):
+class SelicReportTests(TestCase):
     def setUp(self):
         users = get_user_model()
-        self.admin = users.objects.create_user(username="selic-admin", email="selic-admin@example.test", role="admin", approval_status="approved")
-        self.employee = users.objects.create_user(username="selic-employee", email="selic-employee@example.test", role="employee", approval_status="approved")
-        self.api = APIClient()
-        self.api.force_authenticate(self.admin)
+        self.admin = users.objects.create_user(username="selic-admin", email="admin@example.test", role="admin", approval_status="approved")
+        self.employee = users.objects.create_user(username="selic-user", email="user@example.test", role="employee", approval_status="approved")
+        self.api = APIClient(); self.api.force_authenticate(self.admin)
         self.url = "/api/v1/dashboard/selic/"
 
-    def test_initial_table_matches_provided_period(self):
+    def test_initial_report_preserves_blank_and_zero(self):
         response = self.api.get(self.url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["count"], 380)
-        self.assertEqual(response.data["years"], list(range(1995, 2027)))
-        self.assertFalse(SelicAccumulatedRate.objects.filter(year=1995, month=1).exists())
-        self.assertEqual(SelicAccumulatedRate.objects.get(year=1995, month=2).rate, Decimal("440.11"))
-        self.assertEqual(SelicAccumulatedRate.objects.get(year=2026, month=9).rate, Decimal("0.00"))
-        self.assertFalse(SelicAccumulatedRate.objects.filter(year=2026, month=10).exists())
-        self.assertTrue(response.data["can_edit"])
+        report = response.data["active"]
+        self.assertEqual((report["reference_year"], report["reference_month"], report["value_count"]), (2026, 9, 380))
+        self.assertNotIn("1995-01", report["values"])
+        self.assertEqual(report["values"]["1995-02"], "440.11")
+        self.assertEqual(report["values"]["2026-09"], "0.00")
+        self.assertNotIn("2026-10", report["values"])
 
-    def test_admin_can_add_edit_and_import(self):
-        detail = self.url + "2026/10/"
-        created = self.api.patch(detail, {"rate": "1.23", "issued_on": "2026-10-25", "source": "Sicalc"}, format="json")
-        self.assertEqual(created.status_code, 200, created.data)
-        self.assertEqual(created.data["rate"], "1.23")
-        self.assertEqual(created.data["updated_by"], "selic-admin")
-        imported = self.api.post(self.url, {"csv": "ano;jan;fev;mar;abr;mai;jun;jul;ago;set;out;nov;dez\n2027;2,50;;;;;;;;;;;", "source": "Sicalc"}, format="json")
-        self.assertEqual(imported.status_code, 200, imported.data)
-        self.assertEqual(SelicAccumulatedRate.objects.get(year=2027, month=1).rate, Decimal("2.50"))
-        self.assertEqual(self.api.delete(detail).status_code, 405)
+    def test_manual_correction_creates_audited_version(self):
+        original = SelicAccumulatedReport.objects.get(is_active=True)
+        url = f"{self.url}{original.public_id}/2026/9/"
+        response = self.api.patch(url, {"rate": "0.01", "reason": "Correção conforme documento oficial"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        original.refresh_from_db(); self.assertFalse(original.is_active)
+        corrected = SelicAccumulatedReport.objects.get(is_active=True)
+        self.assertEqual(corrected.version, 2)
+        rate = SelicAccumulatedRate.objects.get(report=corrected, year=2026, month=9)
+        self.assertEqual(rate.rate, Decimal("0.01")); self.assertEqual(rate.corrected_by, self.admin)
+        self.assertIn("documento oficial", rate.correction_reason)
 
-    def test_employee_reads_but_cannot_write(self):
+    @patch("apps.clients.selic_views.parse_accumulated_pdf")
+    def test_preview_only_saves_after_confirmation_and_keeps_pdf(self, parser):
+        parser.return_value = {"report_type": "selic_accumulated_payment", "reference_year": 2026, "reference_month": 10,
+            "issued_on": "2026-10-25", "source": "Sicalc", "page_count": 4, "value_count": 1, "blank_count": 3,
+            "values": {"2026-10": "0.00"}, "sha256": "a" * 64}
+        before = SelicAccumulatedReport.objects.count()
+        response = self.api.post(self.url + "import/preview/", {"file": self._pdf()}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(SelicAccumulatedReport.objects.count(), before)
+        self.assertTrue(response.data["token"]); self.assertEqual(response.data["preview"]["next_version"], 1)
+        confirmed = self.api.post(self.url + "import/confirm/", {"token": response.data["token"]}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        stored = SelicAccumulatedReport.objects.get(reference_year=2026, reference_month=10)
+        self.assertEqual(bytes(stored.original_content), b"%PDF-test")
+        self.assertEqual(SelicAccumulatedReport.objects.count(), before + 1)
+
+    def _pdf(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return SimpleUploadedFile("selic.pdf", b"%PDF-test", content_type="application/pdf")
+
+    def test_employee_can_read_but_cannot_change(self):
+        report = SelicAccumulatedReport.objects.get(is_active=True)
         self.api.force_authenticate(self.employee)
-        result = self.api.get(self.url)
-        self.assertEqual(result.status_code, 200)
-        self.assertFalse(result.data["can_edit"])
-        self.assertEqual(self.api.patch(self.url + "2026/10/", {"rate": "1"}, format="json").status_code, 403)
-        self.assertEqual(self.api.post(self.url, {"csv": "x"}, format="json").status_code, 403)
-        self.employee.role = "guest"; self.employee.save()
-        self.assertEqual(self.api.get(self.url).status_code, 403)
-        self.api.force_authenticate(None)
-        self.assertEqual(self.api.get(self.url).status_code, 401)
-
-    def test_filter_export_and_validation(self):
-        filtered = self.api.get(self.url, {"year": 2026})
-        self.assertEqual(filtered.data["count"], 9)
-        exported = self.api.get(self.url, {"year": 2026, "export": "csv"})
-        self.assertEqual(exported.status_code, 200)
-        self.assertEqual(len(exported.content.decode("utf-8-sig").splitlines()), 10)
-        self.assertEqual(self.api.get(self.url, {"year": "x"}).status_code, 400)
-        self.assertEqual(self.api.patch(self.url + "2026/13/", {"rate": "1"}, format="json").status_code, 400)
-        self.assertEqual(self.api.patch(self.url + "2026/10/", {"rate": "-1"}, format="json").status_code, 400)
+        self.assertEqual(self.api.get(self.url).status_code, 200)
+        self.assertFalse(self.api.get(self.url).data["can_edit"])
+        self.assertEqual(self.api.post(self.url + "import/preview/", {"file": self._pdf()}, format="multipart").status_code, 403)
+        self.assertEqual(self.api.patch(f"{self.url}{report.public_id}/2026/9/", {"rate": "1", "reason": "Sem permissão"}).status_code, 403)
