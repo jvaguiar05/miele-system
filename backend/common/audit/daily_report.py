@@ -25,9 +25,10 @@ FIELDS = {
     "approvals.approvalrequest": {"subject", "action", "status", "reason", "was_approved", "approval_notes"},
     "clients.quartersnapshot": {"year", "quarter", "kind", "note", "captured_by"},
     "clients.clientcontract": {"percentage", "starts_on", "ends_on", "reference", "notes", "billing_evolution_requested"},
+    "clients.selicaccumulatedrate": {"year", "month", "rate", "source", "issued_on", "updated_by"},
 }
 LABELS = {"data_vencimento": "Vencimento", "data_transmissao": "Transmissão", "valor_saldo": "Saldo", "valor_pedido": "Valor pedido", "valor_recebido": "Valor recebido", "valor_compensado": "Valor compensado", "status": "Status", "razao_social": "Razão social", "numero_perdcomp": "Número PER/DCOMP", "is_active": "Ativo", "tributo_pedido": "Tributo", "client_status": "Status do cliente"}
-RESOURCES = {"clients.client": "Cliente", "perdcomps.perdcomp": "PER/DCOMP", "identity.user": "Usuário", "approvals.approvalrequest": "Solicitação", "clients.quartersnapshot": "Posição trimestral", "clients.clientcontract": "Contrato percentual"}
+RESOURCES = {"clients.client": "Cliente", "perdcomps.perdcomp": "PER/DCOMP", "identity.user": "Usuário", "approvals.approvalrequest": "Solicitação", "clients.quartersnapshot": "Posição trimestral", "clients.clientcontract": "Contrato percentual", "clients.selicaccumulatedrate": "Taxa Selic acumulada"}
 
 
 class Filters(serializers.Serializer):

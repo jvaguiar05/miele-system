@@ -262,3 +262,25 @@ class ClientContract(models.Model):
 
     def __str__(self):
         return f"{self.client} - {self.percentage}% desde {self.starts_on}"
+
+
+class SelicAccumulatedRate(models.Model):
+    """Sicalc accumulated rate indexed by the debt due month/year."""
+
+    __audit__ = True
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    rate = models.DecimalField(max_digits=8, decimal_places=2)
+    source = models.CharField(max_length=255, default="Sicalc - Receita Federal")
+    issued_on = models.DateField(null=True, blank=True)
+    updated_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="updated_selic_rates")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "selic_accumulated_rates"
+        ordering = ["year", "month"]
+        constraints = [
+            models.UniqueConstraint(fields=["year", "month"], name="unique_selic_accumulated_month"),
+            models.CheckConstraint(condition=models.Q(month__gte=1, month__lte=12), name="selic_valid_month"),
+            models.CheckConstraint(condition=models.Q(rate__gte=0), name="selic_nonnegative_rate"),
+        ]
