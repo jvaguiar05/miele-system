@@ -5,6 +5,11 @@ from .quarter_views import quarter_current, quarter_snapshots, quarter_snapshot_
 from .selic_views import selic_import_confirm, selic_import_preview, selic_original, selic_table, selic_rate_detail
 
 urlpatterns = [
+    path("selic-monthly/", selic_table, {"report_type": "monthly"}, name="selic-monthly-table"),
+    path("selic-monthly/import/preview/", selic_import_preview, {"report_type": "monthly"}, name="selic-monthly-preview"),
+    path("selic-monthly/import/confirm/", selic_import_confirm, {"report_type": "monthly"}, name="selic-monthly-confirm"),
+    path("selic-monthly/<uuid:report_id>/original/", selic_original, {"report_type": "monthly"}, name="selic-monthly-original"),
+    path("selic-monthly/<uuid:report_id>/<int:year>/<int:month>/", selic_rate_detail, {"report_type": "monthly"}, name="selic-monthly-correction"),
     path("selic/", selic_table, name="selic-table"),
     path("selic/import/preview/", selic_import_preview, name="selic-import-preview"),
     path("selic/import/confirm/", selic_import_confirm, name="selic-import-confirm"),

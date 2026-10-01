@@ -270,6 +270,7 @@ class SelicAccumulatedReport(models.Model):
     __audit__ = True
     public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     reference_year = models.PositiveSmallIntegerField()
+    report_type = models.CharField(max_length=16, default="accumulated", choices=[("accumulated", "Acumulada"), ("monthly", "Mensal")])
     reference_month = models.PositiveSmallIntegerField()
     version = models.PositiveSmallIntegerField(default=1)
     issued_on = models.DateField()
@@ -288,7 +289,7 @@ class SelicAccumulatedReport(models.Model):
     class Meta:
         db_table = "selic_accumulated_reports"
         ordering = ["-reference_year", "-reference_month", "-version"]
-        constraints = [models.UniqueConstraint(fields=["reference_year", "reference_month", "version"], name="unique_selic_report_version")]
+        constraints = [models.UniqueConstraint(fields=["report_type", "reference_year", "reference_month", "version"], name="unique_selic_kind_version")]
 
 
 class SelicAccumulatedRate(models.Model):
