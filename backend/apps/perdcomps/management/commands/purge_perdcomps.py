@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand, CommandError
@@ -26,6 +27,7 @@ from apps.perdcomps.models import (
     PerDcomp,
 )
 from common.approvals.models import ApprovalRequest
+from common.audit.models import AuditLog
 from common.shared.models import Annotation, AttachedFile
 from common.shared.signals import delete_file_from_drive
 
@@ -102,10 +104,16 @@ class Command(BaseCommand):
         # Legacy PER/DCOMP attachments use a post-delete signal that removes the
         # physical Drive file. During a reset we preserve those files as an
         # external archive and remove only their obsolete database references.
+        # PerDcomp also has automatic per-row audit enabled. Disabling it only
+        # for this controlled command prevents thousands of remote INSERTs and
+        # replaces them with one summary audit record in the same transaction.
+        perdcomp_audit_enabled = getattr(PerDcomp, "__audit__", None)
+        PerDcomp.__audit__ = False
         post_delete.disconnect(delete_file_from_drive, sender=AttachedFile)
         try:
             with transaction.atomic(using=database):
                 self._purge(database)
+                self._write_summary_audit(database, before, target)
                 after = self._counts(database)
                 actual_preserved = {
                     "clients": after["clients"],
@@ -136,6 +144,10 @@ class Command(BaseCommand):
                         f"{remaining}"
                     )
         finally:
+            if perdcomp_audit_enabled is None:
+                delattr(PerDcomp, "__audit__")
+            else:
+                PerDcomp.__audit__ = perdcomp_audit_enabled
             post_delete.connect(delete_file_from_drive, sender=AttachedFile)
 
         self.stdout.write(self.style.SUCCESS("Limpeza concluída com sucesso."))
@@ -177,6 +189,44 @@ class Command(BaseCommand):
             "client_attachments": AttachedFile.objects.using(database).filter(content_type=client_type).count(),
             "audit_logs": AuditLog.objects.using(database).count(),
         }
+
+    def _write_summary_audit(self, database, before, target):
+        perdcomp_type = ContentType.objects.db_manager(database).get_for_model(PerDcomp)
+        AuditLog.objects.using(database).create(
+            correlation_id=uuid.uuid4(),
+            action=AuditLog.AuditAction.CUSTOM,
+            content_type=perdcomp_type,
+            object_id="bulk-perdcomp-reset",
+            old_data={
+                "perdcomps": before["perdcomps"],
+                "perdcomp_annotations": before["perdcomp_annotations"],
+                "perdcomp_attachments": before["perdcomp_attachments"],
+                "documentary_records": sum(
+                    before[key]
+                    for key in (
+                        "import_batches",
+                        "documentary_credits",
+                        "imported_documents",
+                        "imported_files",
+                        "manual_issues",
+                        "relations",
+                        "debts",
+                        "credit_components",
+                        "utilizations",
+                        "reviews",
+                        "events",
+                    )
+                ),
+            },
+            new_data={"perdcomps": 0, "perdcomp_annotations": 0},
+            metadata={
+                "type": "controlled_bulk_perdcomp_reset",
+                "database": target.get("NAME"),
+                "host": target.get("HOST") or "local",
+                "clients_preserved": before["clients"],
+                "contracts_preserved": before["contracts"],
+            },
+        )
 
     def _purge(self, database):
         perdcomp_type = ContentType.objects.db_manager(database).get_for_model(PerDcomp)

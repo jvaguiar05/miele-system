@@ -10,6 +10,7 @@ from django.test import TestCase
 
 from apps.clients.models import Client, ClientContract, QuarterSnapshot
 from common.approvals.models import ApprovalRequest
+from common.audit.models import AuditLog
 from common.shared.models import Annotation, AttachedFile
 from .document_models import (
     DocumentaryCredit,
@@ -195,6 +196,7 @@ class PurgePerdcompsCommandTests(TestCase):
 
     @patch("common.shared.signals.drive_service.delete_file")
     def test_execute_clears_perdcomps_and_preserves_client_data_and_drive(self, delete_drive):
+        audit_count_before = AuditLog.objects.count()
         call_command(
             "purge_perdcomps",
             execute=True,
@@ -216,4 +218,9 @@ class PurgePerdcompsCommandTests(TestCase):
         self.assertEqual(AttachedFile.objects.filter(content_type=client_type).count(), 1)
         approval = ApprovalRequest.objects.get()
         self.assertEqual(approval.status, ApprovalRequest.ApprovalStatus.CANCELLED)
+        self.assertEqual(AuditLog.objects.count(), audit_count_before + 1)
+        summary = AuditLog.objects.get(metadata__type="controlled_bulk_perdcomp_reset")
+        self.assertEqual(summary.old_data["perdcomps"], 2)
+        self.assertEqual(summary.new_data["perdcomps"], 0)
+        self.assertTrue(PerDcomp.__audit__)
         delete_drive.assert_not_called()
