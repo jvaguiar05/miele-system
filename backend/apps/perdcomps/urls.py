@@ -6,12 +6,14 @@ from .views import (
     PerDcompViewSet,
     PerDcompAnnotationViewSet,
 )
+from .import_views import automatic_preview
 
 router = DefaultRouter()
 router.register(r"", PerDcompViewSet, basename="perdcomp")
 
 # Custom paths for nested resources
 urlpatterns = [
+    path("import/preview/", automatic_preview, name="perdcomp-import-automatic-preview"),
     path("status-report/", status_report, name="status-report"),
     path("<uuid:public_id>/deadline-history/", deadline_history, name="deadline-history"),
     path("deadline-preview/", preview, name="deadline-preview"),

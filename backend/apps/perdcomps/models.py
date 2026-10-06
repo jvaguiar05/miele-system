@@ -35,6 +35,36 @@ class PerDcomp(models.Model):
         CANCELADO = "CANCELADO", "Cancelado"
         VENCIDO = "VENCIDO", "Vencido"
 
+    class VersionStatus(models.TextChoices):
+        VIGENTE = "VIGENTE", "Versão vigente"
+        SUBSTITUIDA = "SUBSTITUIDA", "Substituída"
+        VERSAO_ANTERIOR = "VERSAO_ANTERIOR", "Versão anterior — nenhum dado alterado"
+        CANCELADA = "CANCELADA", "Cancelada"
+
+    class CompensationStatus(models.TextChoices):
+        NAO_APLICAVEL = "NAO_APLICAVEL", "Não aplicável"
+        DECLARADA_AGUARDANDO_HOMOLOGACAO = "DECLARADA_AGUARDANDO_HOMOLOGACAO", "Declarada, aguardando homologação"
+        EM_PROCESSAMENTO = "EM_PROCESSAMENTO", "Em processamento"
+        HOMOLOGADA_INTEGRALMENTE = "HOMOLOGADA_INTEGRALMENTE", "Homologada integralmente"
+        HOMOLOGADA_PARCIALMENTE = "HOMOLOGADA_PARCIALMENTE", "Homologada parcialmente"
+        NAO_HOMOLOGADA = "NAO_HOMOLOGADA", "Não homologada"
+        RETIFICADA = "RETIFICADA", "Retificada"
+        CANCELADA = "CANCELADA", "Cancelada"
+        REVISAO_MANUAL = "REVISAO_MANUAL", "Revisão manual"
+
+    class ReimbursementStatus(models.TextChoices):
+        NAO_APLICAVEL = "NAO_APLICAVEL", "Não aplicável"
+        SOLICITADO = "SOLICITADO", "Solicitado"
+        EM_PROCESSAMENTO = "EM_PROCESSAMENTO", "Em processamento"
+        DEFERIDO_AGUARDANDO_PAGAMENTO = "DEFERIDO_AGUARDANDO_PAGAMENTO", "Deferido, aguardando pagamento"
+        PAGAMENTO_AUTORIZADO_AGUARDANDO_CONCILIACAO = "PAGAMENTO_AUTORIZADO_AGUARDANDO_CONCILIACAO", "Pagamento autorizado, aguardando conciliação"
+        RECEBIDO = "RECEBIDO", "Recebido"
+        RECEBIDO_PARCIALMENTE = "RECEBIDO_PARCIALMENTE", "Recebido parcialmente"
+        COMPENSADO_DE_OFICIO = "COMPENSADO_DE_OFICIO", "Compensado de ofício"
+        DEFERIDO_PARCIALMENTE = "DEFERIDO_PARCIALMENTE", "Deferido parcialmente"
+        INDEFERIDO = "INDEFERIDO", "Indeferido"
+        REVISAO_MANUAL = "REVISAO_MANUAL", "Revisão manual"
+
     # Chave primária interna (int) para performance em FK
     id = models.BigAutoField(primary_key=True)
     # ID público (UUID) para exposição segura
@@ -94,6 +124,26 @@ class PerDcomp(models.Model):
     valor_selic = models.CharField(
         max_length=50, null=True, blank=True, help_text="Valor dos juros SELIC"
     )
+
+    # Normalized documentary values. Legacy string fields above remain compatible.
+    valor_solicitado = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_compensado_declarado = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_compensado_homologado = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    credito_original_utilizado = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    saldo_credito_original = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_deferido = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_pagamento_autorizado = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_recebido_banco = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_compensado_oficio = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    saldo_a_receber = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+
+    version_status = models.CharField(max_length=24, choices=VersionStatus.choices, default=VersionStatus.VIGENTE)
+    status_compensacao = models.CharField(max_length=48, choices=CompensationStatus.choices,
+        default=CompensationStatus.NAO_APLICAVEL)
+    status_ressarcimento = models.CharField(max_length=56, choices=ReimbursementStatus.choices,
+        default=ReimbursementStatus.NAO_APLICAVEL)
+    superseded_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="superseded_versions")
 
     # Status do processo
     status = models.CharField(
@@ -185,3 +235,12 @@ class PerDcomp(models.Model):
         self.deleted_at = None
         self.is_active = True
         self.save()
+
+
+# Register the separate, non-financial documentary import models with Django.
+from .document_models import (  # noqa: E402,F401
+    ImportBatch, DocumentaryCredit, ImportedDocument, ImportedFile,
+    ManualImportIssue,
+    DocumentRelation, DocumentDebt, DocumentCreditComponent,
+    DocumentUtilization, DocumentReview, DocumentaryEvent,
+)

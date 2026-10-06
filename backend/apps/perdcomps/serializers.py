@@ -2,6 +2,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from .models import PerDcomp
 from .deadlines import automatic_due_date
+from .financial import operational_balance
 from django.utils import timezone
 from django.db import transaction
 from common.audit.services import AuditService
@@ -76,6 +77,13 @@ class PerDcompSerializer(serializers.ModelSerializer):
         changed = due is not None and (not self.instance or due != self.instance.data_vencimento)
         if changed and due != expected and not reason:
             raise serializers.ValidationError({"due_date_reason": "Justifique o vencimento diferente do cálculo automático."})
+        requested = attrs.get("valor_pedido", self.instance.valor_pedido if self.instance else "")
+        compensated = attrs.get("valor_compensado", self.instance.valor_compensado if self.instance else "")
+        received = attrs.get("valor_recebido", self.instance.valor_recebido if self.instance else "")
+        try:
+            attrs["valor_saldo"] = operational_balance(requested, compensated, received)
+        except ValueError as exc:
+            raise serializers.ValidationError({"valor_saldo": str(exc)}) from exc
         return attrs
 
     def record_due_reason(self, instance, reason, previous=None):
@@ -146,6 +154,19 @@ class PerDcompSerializer(serializers.ModelSerializer):
             "valor_recebido",
             "valor_saldo",
             "valor_selic",
+            "valor_solicitado",
+            "valor_compensado_declarado",
+            "valor_compensado_homologado",
+            "credito_original_utilizado",
+            "saldo_credito_original",
+            "valor_deferido",
+            "valor_pagamento_autorizado",
+            "valor_recebido_banco",
+            "valor_compensado_oficio",
+            "saldo_a_receber",
+            "version_status",
+            "status_compensacao",
+            "status_ressarcimento",
             "status",
             "is_active",
             "created_at",
@@ -164,6 +185,19 @@ class PerDcompSerializer(serializers.ModelSerializer):
             "esta_vencido",
             "pode_ser_editado",
             "pode_ser_cancelado",
+            "valor_solicitado",
+            "valor_compensado_declarado",
+            "valor_compensado_homologado",
+            "credito_original_utilizado",
+            "saldo_credito_original",
+            "valor_deferido",
+            "valor_pagamento_autorizado",
+            "valor_recebido_banco",
+            "valor_compensado_oficio",
+            "saldo_a_receber",
+            "version_status",
+            "status_compensacao",
+            "status_ressarcimento",
         ]
         extra_kwargs = {
             'numero': {'required': False, 'allow_null': True, 'allow_blank': True},
@@ -250,6 +284,16 @@ class PerDcompSensitiveSerializer(serializers.ModelSerializer):
         ):
             raise serializers.ValidationError("Rascunho é um status histórico e não pode mais ser selecionado.")
         return value
+
+    def validate(self, attrs):
+        requested = attrs.get("valor_pedido", self.instance.valor_pedido if self.instance else "")
+        compensated = attrs.get("valor_compensado", self.instance.valor_compensado if self.instance else "")
+        received = attrs.get("valor_recebido", self.instance.valor_recebido if self.instance else "")
+        try:
+            attrs["valor_saldo"] = operational_balance(requested, compensated, received)
+        except ValueError as exc:
+            raise serializers.ValidationError({"valor_saldo": str(exc)}) from exc
+        return attrs
 
     class Meta:
         model = PerDcomp

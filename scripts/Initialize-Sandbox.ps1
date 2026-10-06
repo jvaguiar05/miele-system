@@ -7,16 +7,29 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Join-Path $repositoryRoot "backend"
 $sandboxDirectory = Join-Path $repositoryRoot ".sandbox"
 $sandboxDatabase = Join-Path $sandboxDirectory "miele-sandbox.sqlite3"
+$pyLauncherPython = $null
+if (Get-Command py -ErrorAction SilentlyContinue) {
+    $pyLauncherPython = & py -3.11 -c "import sys; print(sys.executable)" 2>$null
+}
 $pythonCandidates = @(
-    (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
     (Join-Path $repositoryRoot ".venv-local\Scripts\python.exe"),
-    (Join-Path $repositoryRoot ".venv\Scripts\python.exe")
-) | Where-Object { $_ }
+    (Join-Path $repositoryRoot ".venv\Scripts\python.exe"),
+    ($repositoryRoot + ".venv\Scripts\python.exe"),
+    (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
+    $pyLauncherPython
+) | Where-Object { $_ } | Select-Object -Unique
 $python = $null
 foreach ($candidate in $pythonCandidates) {
     if ((Test-Path -LiteralPath $candidate)) {
-        & $candidate --version 2>$null
-        if ($LASTEXITCODE -eq 0) {
+        $candidateWorks = $false
+        try {
+            & $candidate -c "import django, pypdf, pypdfium2, rapidocr, onnxruntime" 2>$null
+            $candidateWorks = $LASTEXITCODE -eq 0
+        }
+        catch {
+            $candidateWorks = $false
+        }
+        if ($candidateWorks) {
             $python = $candidate
             break
         }
@@ -24,7 +37,7 @@ foreach ($candidate in $pythonCandidates) {
 }
 
 if (-not $python) {
-    throw "Nenhum ambiente Python funcional foi encontrado. Recrie .venv-local ou .venv antes de iniciar o sandbox."
+    throw "Nenhum Python com as dependências do projeto (Django, PDF e OCR) foi encontrado. Recrie .venv-local/.venv ou instale requirements/requirements.txt no Python 3.11."
 }
 
 New-Item -ItemType Directory -Force -Path $sandboxDirectory | Out-Null

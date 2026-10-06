@@ -82,11 +82,17 @@ def status_report(request):
             records = records.filter(**{f"{field}__{lookup}": filters[bound]})
     rows, counts = [], {key: 0 for key, _ in PerDcomp.Status.choices}
     total, balance, missing = Decimal(0), Decimal(0), 0
+    declared_compensation = homologated_compensation = received_bank = Decimal(0)
     for record in records.order_by("data_vencimento", "id").iterator():
         requested, remaining = money(record.valor_pedido), money(record.valor_saldo)
-        total += requested or Decimal(0)
-        balance += remaining or Decimal(0)
-        missing += int(requested is None) + int(remaining is None)
+        contributes = record.version_status == PerDcomp.VersionStatus.VIGENTE
+        if contributes:
+            total += requested or Decimal(0)
+            balance += remaining or Decimal(0)
+            missing += int(requested is None) + int(remaining is None)
+            declared_compensation += record.valor_compensado_declarado or Decimal(0)
+            homologated_compensation += record.valor_compensado_homologado or Decimal(0)
+            received_bank += record.valor_recebido_banco or Decimal(0)
         counts[record.status] = counts.get(record.status, 0) + 1
         rows.append({
             "id": str(record.public_id), "number": record.numero_perdcomp,
@@ -96,20 +102,37 @@ def status_report(request):
             "due": record.data_vencimento.isoformat() if record.data_vencimento else None,
             "amount": str(requested) if requested is not None else None,
             "balance": str(remaining) if remaining is not None else None,
+            "version_status": record.version_status, "version_label": record.get_version_status_display(),
+            "contributes_to_totals": contributes,
+            "compensation_status": record.status_compensacao,
+            "reimbursement_status": record.status_ressarcimento,
+            "requested_documentary": str(record.valor_solicitado) if record.valor_solicitado is not None else None,
+            "compensation_declared": str(record.valor_compensado_declarado) if record.valor_compensado_declarado is not None else None,
+            "compensation_homologated": str(record.valor_compensado_homologado) if record.valor_compensado_homologado is not None else None,
+            "credit_used": str(record.credito_original_utilizado) if record.credito_original_utilizado is not None else None,
+            "documentary_balance": str(record.saldo_credito_original) if record.saldo_credito_original is not None else None,
+            "received_bank": str(record.valor_recebido_banco) if record.valor_recebido_banco is not None else None,
         })
     if filters.get("export"):
         stream = io.StringIO()
         writer = csv.writer(stream, delimiter=";")
-        writer.writerow(["Cliente", "CNPJ", "Processo", "Status", "Tributo", "Transmissão", "Vencimento", "Valor pedido", "Saldo cadastrado"])
+        writer.writerow(["Cliente", "CNPJ", "Processo", "Status", "Versão", "Tributo", "Transmissão", "Vencimento",
+                         "Valor pedido", "Compensação declarada", "Compensação homologada", "Recebido no banco",
+                         "Crédito utilizado", "Saldo documental", "Saldo operacional", "Integra os totais"])
         for row in rows:
-            writer.writerow([safe_cell(row[key]) for key in ["client", "cnpj", "number", "status_label", "tax", "transmission", "due", "amount", "balance"]])
+            writer.writerow([safe_cell(row[key]) for key in ["client", "cnpj", "number", "status_label", "version_label", "tax",
+                "transmission", "due", "amount", "compensation_declared", "compensation_homologated", "received_bank",
+                "credit_used", "documentary_balance", "balance", "contributes_to_totals"]])
         response = HttpResponse("\ufeff" + stream.getvalue(), content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="relatorio-status.csv"'
         return response
     pagination = ReportPagination()
     page = pagination.paginate_queryset(rows, request)
     response = pagination.get_paginated_response(page)
-    response.data["summary"] = {"amount": str(total), "balance": str(balance), "missing_values": missing, "statuses": counts}
+    response.data["summary"] = {"amount": str(total), "balance": str(balance), "missing_values": missing,
+        "compensation_declared": str(declared_compensation), "compensation_homologated": str(homologated_compensation),
+        "received_bank": str(received_bank), "statuses": counts,
+        "totals_rule": "Somente versões vigentes integram os totais."}
     response.data["selected_clients"] = [
         {"id": str(client.public_id), "name": client.razao_social, "cnpj": client.cnpj}
         for client in client_map.values()

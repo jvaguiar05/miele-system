@@ -15,9 +15,10 @@ class GoogleDriveService:
     Usa OAuth 2.0 com Refresh Token para agir como o usuário dono (contornando cota zero).
     """
 
-    def __init__(self):
+    def __init__(self, request_timeout=None):
         self.scopes = ["https://www.googleapis.com/auth/drive"]
         self.service = None
+        self.request_timeout = request_timeout
 
         # Credenciais OAuth
         self.client_id = getattr(settings, "GDRIVE_CLIENT_ID", None)
@@ -51,13 +52,17 @@ class GoogleDriveService:
                 scopes=self.scopes,
             )
 
-            self.service = build(
-                "drive", "v3", credentials=creds, cache_discovery=False
-            )
+            if self.request_timeout is None:
+                self.service = build("drive", "v3", credentials=creds, cache_discovery=False)
+            else:
+                import httplib2
+                from google_auth_httplib2 import AuthorizedHttp
+                transport = AuthorizedHttp(creds, http=httplib2.Http(timeout=self.request_timeout))
+                self.service = build("drive", "v3", http=transport, cache_discovery=False)
         return self.service
 
     def upload_stream(
-        self, file_obj, filename: str, entity_type: str, mime_type: str
+        self, file_obj, filename: str, entity_type: str, mime_type: str, app_properties=None
     ) -> str:
         """
         Faz upload agindo como o usuário autenticado via OAuth.
@@ -70,6 +75,8 @@ class GoogleDriveService:
             parent_id = None
 
         file_metadata = {"name": filename}
+        if app_properties:
+            file_metadata["appProperties"] = app_properties
         if parent_id:
             file_metadata["parents"] = [parent_id]
 
