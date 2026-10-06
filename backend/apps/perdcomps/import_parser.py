@@ -4,7 +4,7 @@ import unicodedata
 from datetime import datetime
 from decimal import Decimal
 
-VERSION = "web83-documentary-3-layouts"
+VERSION = "web82-83-documentary-5"
 PROTOCOL = r"\d{5}\.\d{5}\.\d{6}\.\d\.\d\.\d{2}-\d{4}"
 CNPJ = r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}"
 MONEY = r"(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}"
@@ -175,7 +175,10 @@ def parse_pages(pages):
         return classify_legacy(output)
     reader = Reader(rows, output)
     receipt = "recibo de entrega" in fold(text)
-    version = re.search(r"(?:PERDCOMP\s+|Versão:\s*)(8\.3\d)\b", text, re.I)
+    # Versions 8.2 (demonstrative) and 8.20 (receipt) use the same validated
+    # documentary structure as the supported 8.3x family. Keep the allowlist
+    # explicit so unknown releases still require manual review.
+    version = re.search(r"(?:PERDCOMP\s+|Versão:\s*)(8\.(?:2(?:0)?|3\d))\b", text, re.I)
     if not version or (receipt and "PER/DCOMP WEB" not in text):
         output["issues"] = ["Leiaute não homologado — revisão manual necessária."]
         return output
@@ -349,16 +352,36 @@ def parse_pages(pages):
     # Monthly assessed amounts belong to their component, not to additional credits.
     monthly = False
     current = None
+    current_from_code = False
     months = "Janeiro Fevereiro Março Abril Maio Junho Julho Agosto Setembro Outubro Novembro Dezembro".split()
     for row in body:
         label = row[1].strip()
         if label == "VALORES APURADOS DO CRÉDITO":
-            monthly = True
+            monthly, current, current_from_code = True, None, False
         elif label in ("TOTAIS", "SALDO DO CRÉDITO"):
-            monthly, current = False, None
+            monthly, current, current_from_code = False, None, False
         elif monthly:
+            # In current PER/DCOMP Web layouts, the four-digit number below
+            # each credit header is a sub-item sequence and can restart at
+            # 0001. Bind monthly values to the preceding credit code (201,
+            # 301, etc.); retain sequence lookup only for older layouts that
+            # do not print that header.
+            code_header = re.match(r"([^\s.-]+)\s*-\s*", label)
+            if code_header:
+                matching = [c for c in output["components"] if c.get("code") == code_header[1]]
+                current = matching[0] if len(matching) == 1 else None
+                current_from_code = True
+                if not matching:
+                    output["issues"].append(
+                        f"Componente mensal não localizado para o código {code_header[1]}."
+                    )
+                elif len(matching) > 1:
+                    output["issues"].append(
+                        f"Componente mensal ambíguo para o código {code_header[1]}."
+                    )
+                continue
             match = re.match(r"(\d{4})\.\s*Crédito apurado no mês", label)
-            if match:
+            if match and not current_from_code:
                 current = next((c for c in output["components"] if c["sequence"] == int(match[1])), None)
             elif current:
                 for month in months:

@@ -375,7 +375,10 @@ def build_preview(client, entries):
         if ImportedDocument.objects.filter(cnpj=digits(client.cnpj), protocol=number).exclude(client=client).exists():
             problems.append("Identidade já vinculada a outro cadastro de cliente.")
         kinds = {e["kind"] for e in exs}
-        ocr_extractions = [extraction for extraction in exs if extraction.get("text_source") == "ocr"]
+        # Any extraction produced outside the server requires the same explicit
+        # human confirmation as OCR, even when the local tool found native text.
+        ocr_extractions = [extraction for extraction in exs
+                           if extraction.get("text_source") == "ocr" or extraction.get("local_package")]
         ocr_confidences = [float(extraction.get("ocr", {}).get("confidence", 0))
                            for extraction in ocr_extractions if extraction.get("ocr")]
         completeness = "complete" if {"receipt", "demonstrative"} <= kinds else "receipt_only" if "receipt" in kinds else "demonstrative_only"

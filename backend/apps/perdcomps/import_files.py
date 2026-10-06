@@ -11,6 +11,7 @@ import time
 import zipfile
 
 from .import_parser import parse_pages
+from .ocr_package import OcrPackageProblem, is_ocr_package, load_ocr_package
 
 MAX_FILES = 100
 MAX_FILE = 10 * 1024 * 1024
@@ -22,11 +23,11 @@ class ImportProblem(ValueError):
     pass
 
 
-def extract_pdf(raw, ocr_page_budget=MAX_OCR_PAGES):
+def extract_pdf(raw, ocr_page_budget=MAX_OCR_PAGES, timeout=165):
     try:
         result = subprocess.run(
             [sys.executable, str(Path(__file__).with_name("import_pdf_worker.py")), str(max(0, ocr_page_budget))],
-            input=raw, capture_output=True, timeout=165,
+            input=raw, capture_output=True, timeout=timeout,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         if result.returncode or len(result.stdout) > 6000000:
@@ -41,14 +42,14 @@ def ingest(uploads):
         raise ImportProblem("Selecione de 1 a 100 arquivos.")
     entries, total = [], 0
 
-    def append(name, raw, error=None):
+    def append(name, raw, error=None, prepared=None):
         nonlocal total
         total += len(raw)
         if len(entries) >= MAX_FILES or total > MAX_TOTAL:
             raise ImportProblem("Lote excede 100 arquivos ou 50 MB descompactados.")
         name = name.replace("\\", "/").split("/")[-1][:255]
         name = re.sub(r"[\x00-\x1f\x7f]", "", name)
-        entries.append({"name": name, "raw": raw, "error": error})
+        entries.append({"name": name, "raw": raw, "error": error, "prepared": prepared})
 
     input_size = 0
     for upload in uploads:
@@ -67,6 +68,13 @@ def ingest(uploads):
                 infos = archive.infolist()
                 if len(infos) > MAX_FILES:
                     raise ImportProblem("ZIP excede 100 itens.")
+                if is_ocr_package(archive):
+                    try:
+                        for prepared in load_ocr_package(archive):
+                            append(prepared["name"], prepared["raw"], prepared=prepared)
+                    except OcrPackageProblem as exc:
+                        raise ImportProblem(str(exc)) from None
+                    continue
                 for info in infos:
                     path = PurePosixPath(info.filename.replace("\\", "/"))
                     unsafe = (path.is_absolute() or ".." in path.parts or ":" in str(path)
@@ -92,15 +100,22 @@ def ingest(uploads):
     for index, entry in enumerate(entries):
         entry["index"] = index
         raw = entry["raw"]
-        entry["sha256"] = hashlib.sha256(raw).hexdigest()
-        entry["size"] = len(raw)
-        entry["pages"] = 0
+        prepared = entry.pop("prepared", None)
+        entry["sha256"] = prepared["sha256"] if prepared else hashlib.sha256(raw).hexdigest()
+        entry["size"] = prepared["size"] if prepared else len(raw)
+        entry["pages"] = prepared["pages"] if prepared else 0
         suffix = Path(entry["name"]).suffix.lower()
         if suffix != ".pdf":
             entry["error"] = entry["error"] or ("Backup DBK não suportado." if suffix == ".dbk" else "Arquivo não PDF — ignorado.")
         elif not raw.startswith(b"%PDF-"):
             entry["error"] = entry["error"] or "Assinatura de PDF inválida."
         if not entry["error"]:
+            if prepared:
+                entry["extraction"] = prepared["extraction"]
+                pages += entry["pages"]
+                if pages > 500:
+                    raise ImportProblem("Lote excede 500 páginas. Divida-o em lotes menores.")
+                continue
             if time.monotonic() - start > 170:
                 raise ImportProblem("Lote excedeu o tempo seguro de processamento. Divida-o em lotes menores.")
             if entry["sha256"] not in cache:

@@ -4,7 +4,9 @@
 
 **PER/DCOMP → Importar** para identificação automática pelo CNPJ, ou **Clientes → abrir cliente → PER/DCOMPs → Importação em lote** para trabalhar dentro de um cliente já conhecido.
 
-É possível enviar um único PDF, vários PDFs ou um ZIP. Cada envio pertence a um único cliente. Na aba geral, o sistema identifica o cliente pelo CNPJ principal extraído; dentro do cliente, o CNPJ precisa coincidir com o cadastro aberto. A prévia não grava dados; um administrador ou funcionário aprovado pode confirmar depois de conferir as diferenças.
+É possível enviar um único PDF, vários PDFs, um ZIP comum ou um pacote `.miele.zip` preparado pela ferramenta local. Cada envio pertence a um único cliente. Na aba geral, o sistema identifica o cliente pelo CNPJ principal extraído; dentro do cliente, o CNPJ precisa coincidir com o cadastro aberto. A prévia não grava dados; um administrador ou funcionário aprovado pode confirmar depois de conferir as diferenças.
+
+Para grandes lotes que exigem OCR, consulte [Miele OCR Local](MIELE_OCR_LOCAL.md). O computador executa o trabalho pesado e o backend continua responsável por integridade, validação, confirmação e auditoria.
 
 ## Regras de segurança
 
@@ -81,7 +83,7 @@ Prefixo: `/api/v1/clients/{client_uuid}/perdcomp-imports/`.
 - `GET manual/{issue_uuid}/file/` e `POST manual/{issue_uuid}/resolve/`;
 - `POST sync-drive/`, somente por administrador.
 
-Limites: 100 arquivos, 10 MB por PDF, 50 MB por lote/ZIP, 100 páginas por PDF, 500 por lote e 20 páginas que necessitem OCR por lote. ZIP aninhado, traversal, symlink, item criptografado e compressão excessiva são rejeitados. DBK continua fora do escopo.
+Limites: 100 arquivos, 10 MB por PDF, 50 MB por lote/ZIP, 100 páginas por PDF, 500 por lote e 20 páginas que necessitem OCR direto no servidor. Pacotes OCR locais contêm até 49 PDFs, 45 MB e 500 páginas; o servidor confere hashes e não repete o OCR. ZIP aninhado, traversal, symlink, item criptografado, arquivo não declarado e compressão excessiva são rejeitados. DBK continua fora do escopo.
 
 ## PDFs em imagem e OCR
 
@@ -113,4 +115,4 @@ py -3.11 backend/manage.py test apps.clients.test_contracts apps.clients.test_da
 
 Antes de produção: aplicar `migrate`, homologar em staging com cópia anonimizada e conferir criação, atualização segura, vínculo sem alteração, retificadora e fila manual. Nenhum PDF privado deve ir ao Git.
 
-Validação local em 04/10/2026: 80 testes passaram com o conjunto privado, além de Django `check`, migrations check, TypeScript, ESLint do novo componente e build de produção. A migração `0010` foi aplicada somente no sandbox após o backup `.sandbox/backup-before-financial-versioning-20261004-170531.sqlite3`. Nenhum commit, push ou deploy foi realizado.
+O conjunto privado nunca deve ser versionado no Git. Antes de cada publicação, repita os testes, o `check`, a conferência de migrações e o build do frontend.

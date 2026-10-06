@@ -1,4 +1,6 @@
 from django.http import JsonResponse
+from django.db import connections
+from django.db.utils import DatabaseError
 
 
 def live(_request):
@@ -6,5 +8,10 @@ def live(_request):
 
 
 def ready(_request):
-    # In real app, check DB/Redis/S3 etc.
+    try:
+        with connections["default"].cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except DatabaseError:
+        return JsonResponse({"status": "unavailable"}, status=503)
     return JsonResponse({"status": "ready"})

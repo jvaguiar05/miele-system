@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -178,6 +179,53 @@ def pdf(text=None, encrypted=False):
     return out.getvalue()
 
 
+def local_ocr_package(text=None, manifest_cnpj=CNPJ, expected_sha=None, extra_member=False, text_source="ocr"):
+    text = text or receipt()
+    raw = pdf(text)
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    declared_sha = expected_sha or actual_sha
+    extraction_path = f"extracoes/{declared_sha}.json"
+    pdf_path = f"originais/001_{declared_sha[:12]}_documento.pdf"
+    extraction = {
+        "schema": "miele.perdcomp.ocr-extraction",
+        "schema_version": 1,
+        "sha256": declared_sha,
+        "pages": [text],
+        "text_source": text_source,
+        "ocr": {
+            "engine": "rapidocr-local-test",
+            "pages": 1,
+            "recognized_pages": 1,
+            "confidence": 0.99,
+            "minimum_confidence": 0.98,
+        } if text_source == "ocr" else None,
+    }
+    manifest = {
+        "schema": "miele.perdcomp.ocr-package",
+        "schema_version": 1,
+        "package_id": "5e658b2a-3de5-4f6f-8a77-d3a5cd21bbd3",
+        "created_at": "2026-10-06T12:00:00+00:00",
+        "client_cnpj": digits(manifest_cnpj),
+        "tool": {"name": "miele-ocr-local", "version": "1.0.0", "parser_version": "test"},
+        "files": [{
+            "original_name": "documento.pdf",
+            "path": pdf_path,
+            "extraction_path": extraction_path,
+            "sha256": declared_sha,
+            "size": len(raw),
+            "pages": 1,
+        }],
+    }
+    content = io.BytesIO()
+    with zipfile.ZipFile(content, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("miele-ocr-manifest.json", json.dumps(manifest).encode())
+        archive.writestr(pdf_path, raw)
+        archive.writestr(extraction_path, json.dumps(extraction).encode())
+        if extra_member:
+            archive.writestr("nao-declarado.txt", b"blocked")
+    return content.getvalue()
+
+
 class ParserTests(SimpleTestCase):
     def test_demo_and_receipt_identity(self):
         for text in (demo(), receipt()):
@@ -185,6 +233,20 @@ class ParserTests(SimpleTestCase):
             self.assertEqual(result["status"], "ready", result["issues"])
             self.assertEqual(result["fields"]["protocol"], P1)
             self.assertEqual(result["fields"]["cnpj"], CNPJ)
+
+    def test_version_82_demonstrative_and_820_receipt_are_supported(self):
+        for text, expected_version in (
+            (demo().replace("PERDCOMP  8.33", "PERDCOMP  8.2"), "8.2"),
+            (receipt().replace("Versão: 8.32", "Versão: 8.20"), "8.20"),
+        ):
+            with self.subTest(version=expected_version):
+                result = parse_pages([text])
+                self.assertEqual(result["status"], "ready", result["issues"])
+                self.assertEqual(result["fields"]["version"], expected_version)
+
+        unknown = parse_pages([receipt().replace("Versão: 8.32", "Versão: 8.21")])
+        self.assertEqual(unknown["status"], "review")
+        self.assertIn("Leiaute não homologado", unknown["issues"][0])
 
     def test_zero_is_not_missing(self):
         result = parse_pages([demo(P2, reference=P1, debt=True)])
@@ -259,6 +321,74 @@ Valor do Crédito Utilizado Neste Documento  0,00
         self.assertEqual(len(result["components"]), 2)
         self.assertEqual(result["status"], "ready", result["issues"])
 
+    def test_monthly_blocks_bind_by_credit_code_when_subsequence_restarts(self):
+        text = demo()
+        text = text.replace(
+            "Valor Original do Crédito Inicial  1.000,00",
+            "Valor Original do Crédito Inicial  24.351,73",
+        ).replace(
+            "Crédito Passível de Ressarcimento  1.000,00",
+            "Crédito Passível de Ressarcimento  24.351,73",
+        ).replace(
+            "Valor do Pedido de Ressarcimento  1.000,00",
+            "Valor do Pedido de Ressarcimento  24.351,73",
+        )
+        original_component = """0001. Código do Crédito  201 - Crédito de teste
+Valor do Crédito Apurado  1.000,00
+Valor das Deduções ou Descontos  0,00
+Valor Utilizado em Dcomps Anteriores  0,00
+Saldo do Crédito  1.000,00
+Valor do Crédito Utilizado Neste Documento  1.000,00
+"""
+        components = """0001. Código do Crédito  201 - Crédito interno
+Valor do Crédito Apurado  1.205,64
+Valor das Deduções ou Descontos  0,00
+Valor Utilizado em Dcomps Anteriores  0,00
+Saldo do Crédito  1.205,64
+Valor do Crédito Utilizado Neste Documento  1.205,64
+0002. Código do Crédito  301 - Crédito de exportação
+Valor do Crédito Apurado  23.146,09
+Valor das Deduções ou Descontos  0,00
+Valor Utilizado em Dcomps Anteriores  0,00
+Saldo do Crédito  23.146,09
+Valor do Crédito Utilizado Neste Documento  23.146,09
+"""
+        text = text.replace(original_component, components).replace(
+            "VALOR DO CRÉDITO APURADO  1.000,00",
+            "VALOR DO CRÉDITO APURADO  24.351,73",
+        )
+        original_months = """0001. Crédito apurado no mês.
+Janeiro  1.000,00
+TOTAIS
+JANEIRO  1.000,00
+"""
+        monthly_blocks = """201 - Crédito interno
+0001. Crédito apurado no mês.
+Janeiro  0,00
+Fevereiro  0,00
+Março  1.205,64
+301 - Crédito de exportação
+0001. Crédito apurado no mês.
+Janeiro  7.660,93
+Fevereiro  11.382,22
+Março  4.102,94
+TOTAIS
+JANEIRO  7.660,93
+FEVEREIRO  11.382,22
+MARÇO  5.308,58
+"""
+        result = parse_pages([text.replace(original_months, monthly_blocks)])
+
+        self.assertEqual(result["status"], "ready", result["issues"])
+        self.assertEqual(
+            result["components"][0]["months"],
+            {"Janeiro": "0.00", "Fevereiro": "0.00", "Março": "1205.64"},
+        )
+        self.assertEqual(
+            result["components"][1]["months"],
+            {"Janeiro": "7660.93", "Fevereiro": "11382.22", "Março": "4102.94"},
+        )
+
     def test_debt_across_pages_and_dctf(self):
         text = demo(P2, reference=P1, debt=True)
         result = parse_pages(text.split("Principal"))
@@ -323,6 +453,27 @@ class FileTests(SimpleTestCase):
             ingest([SimpleUploadedFile("x.pdf", b"x" * (10 * 1024 * 1024 + 1))])
         with self.assertRaises(ImportProblem):
             ingest([SimpleUploadedFile("x.pdf", b"x")] * 101)
+
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_local_ocr_package_reuses_text_and_preserves_original(self, extractor):
+        package = local_ocr_package()
+        row = ingest([SimpleUploadedFile("cliente.miele.zip", package)])[0]
+        extractor.assert_not_called()
+        self.assertEqual(row["extraction"]["status"], "ready")
+        self.assertEqual(row["extraction"]["text_source"], "ocr")
+        self.assertEqual(row["extraction"]["fields"]["protocol"], P1)
+        self.assertEqual(row["extraction"]["local_package"]["tool"], "miele-ocr-local")
+        self.assertEqual(hashlib.sha256(row["raw"]).hexdigest(), row["sha256"])
+
+    def test_local_ocr_package_rejects_hash_cnpj_and_undeclared_member(self):
+        for package in (
+            local_ocr_package(expected_sha="0" * 64),
+            local_ocr_package(manifest_cnpj=OTHER),
+            local_ocr_package(extra_member=True),
+        ):
+            with self.subTest():
+                with self.assertRaises(ImportProblem):
+                    ingest([SimpleUploadedFile("cliente.miele.zip", package)])
 
 
 class ImportTests(TestCase):
@@ -636,6 +787,52 @@ class ImportTests(TestCase):
         )
         self.assertEqual(confirmed.status_code, 200, confirmed.data)
         self.assertEqual(ImportedDocument.objects.get().client, self.customer)
+
+    def test_main_import_accepts_local_ocr_package_with_explicit_confirmation(self):
+        api = APIClient()
+        api.force_authenticate(self.employee)
+        payload = local_ocr_package()
+        preview = api.post(
+            "/api/v1/perdcomps/import/preview/",
+            {"files": SimpleUploadedFile("cliente.miele.zip", payload)},
+            format="multipart",
+        )
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertTrue(preview.data["groups"][0]["ocr_used"])
+        self.assertEqual(preview.data["groups"][0]["ocr_confidence"], 0.99)
+        protocol = digits(P1)
+        confirmed = api.post(
+            f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/confirm/",
+            {
+                "files": SimpleUploadedFile("cliente.miele.zip", payload),
+                "token": preview.data["token"],
+                "selected": json.dumps([protocol]),
+                "ocr_confirmed": json.dumps([protocol]),
+                "reason": "OCR local conferido diretamente no documento original.",
+            },
+            format="multipart",
+        )
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        stored = ImportedFile.objects.get()
+        self.assertEqual(stored.extraction["text_source"], "ocr")
+        self.assertEqual(stored.extraction["local_package"]["tool"], "miele-ocr-local")
+        self.assertEqual(hashlib.sha256(bytes(stored.original_content)).hexdigest(), stored.sha256)
+
+    def test_native_local_package_still_requires_human_confirmation(self):
+        row = ingest([
+            SimpleUploadedFile(
+                "cliente.miele.zip",
+                local_ocr_package(text_source="native"),
+            )
+        ])[0]
+        preview = build_preview(self.customer, [row])
+
+        self.assertEqual(row["extraction"]["text_source"], "native")
+        self.assertEqual(
+            row["extraction"]["local_package"]["extraction_source"],
+            "native",
+        )
+        self.assertTrue(preview["groups"][0]["ocr_used"])
 
     def test_main_import_rejects_batch_with_multiple_clients(self):
         api = APIClient()
