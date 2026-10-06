@@ -23,7 +23,14 @@ from .import_service import (
     apply_reviews, build_preview, manifest, publish, build_reprocess_preview,
     reprocess_manifest, reprocess_documents,
 )
-from .import_storage import sync_originals
+from .import_storage import (
+    OriginalUnavailable,
+    client_storage_summary,
+    global_storage_summary,
+    read_original,
+    sync_all_storage,
+    sync_client_storage,
+)
 from .import_parser import digits, valid_cnpj
 
 SALT = "miele.perdcomp.documentary.preview.v1"
@@ -273,9 +280,11 @@ def confirm(request, client_id):
                          financial_confirmed, ocr_confirmed)
         # Drive is an explicit, independently retryable second step. A network
         # timeout must never disguise a successfully committed publication.
-        pending = ImportedFile.objects.filter(client=client, drive_file_id="").count()
-        result["storage"] = {"status": "database", "pending": pending,
-            "message": "Originais preservados no banco. Use Sincronizar originais com o Drive para arquivá-los na pasta de PER/DCOMPs."}
+        result["storage"] = client_storage_summary(client)
+        result["storage"]["message"] = (
+            "Registro concluído. Os PDFs estão protegidos no banco até serem "
+            "verificados e arquivados no Google Drive."
+        )
         return Response(result)
     except signing.BadSignature:
         return Response({"detail": "Prévia inválida ou expirada. Gere uma nova prévia."}, status=400)
@@ -328,13 +337,19 @@ def documents(request, client_id):
             "relations": [{"kind": r.kind, "protocol": r.target_protocol, "resolved": bool(r.target_id or r.legacy_target_id)} for r in document.relations.all()],
             "files": [{"id": str(f.public_id), "name": f.original_name, "kind": f.kind, "sha256": f.sha256,
                        "extraction": f.extraction, "extracted_at": f.extracted_at.isoformat(), "pages": f.pages,
-                       "drive_synced": bool(f.drive_file_id)} for f in document.files.all()],
+                       "drive_synced": bool(f.drive_file_id and f.database_released_at),
+                       "storage": "drive" if f.drive_file_id and f.database_released_at else
+                           "transition" if f.drive_file_id else "database"}
+                      for f in document.files.all()],
             "reviews": [{"reviewer": r.reviewer_id, "date": r.created_at.isoformat(), "reason": r.reason, "changes": r.changes} for r in document.reviews.all()]})
     pending = ManualImportIssue.objects.filter(client=client, status=ManualImportIssue.Status.PENDING).defer("original_content").order_by("-created_at")[:100]
     return Response({"results": items, "count": total, "next_offset": offset + 50 if offset + 50 < total else None,
         "manual_issues": [{"id": str(issue.public_id), "name": issue.original_name, "sha256": issue.sha256,
-            "pages": issue.pages, "issues": issue.issues, "created_at": issue.created_at.isoformat()}
-            for issue in pending]})
+            "pages": issue.pages, "issues": issue.issues, "created_at": issue.created_at.isoformat(),
+            "drive_synced": bool(issue.drive_file_id and issue.database_released_at),
+            "storage": "drive" if issue.drive_file_id and issue.database_released_at else
+                "transition" if issue.drive_file_id else "database"}
+            for issue in pending], "storage": client_storage_summary(client)})
 
 
 @api_view(["GET"])
@@ -381,7 +396,11 @@ def reprocess_confirm(request, client_id):
 def original(request, client_id, file_id):
     client = client_for(client_id)
     file = get_object_or_404(ImportedFile, client=client, public_id=file_id)
-    response = FileResponse(io.BytesIO(bytes(file.original_content)), as_attachment=True,
+    try:
+        content = read_original(file)
+    except OriginalUnavailable as exc:
+        return Response({"detail": str(exc)}, status=exc.status)
+    response = FileResponse(io.BytesIO(content), as_attachment=True,
         filename=file.original_name, content_type="application/pdf")
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "no-store"
@@ -393,7 +412,11 @@ def original(request, client_id, file_id):
 def manual_original(request, client_id, issue_id):
     client = client_for(client_id)
     issue = get_object_or_404(ManualImportIssue, client=client, public_id=issue_id)
-    response = FileResponse(io.BytesIO(bytes(issue.original_content)), as_attachment=True,
+    try:
+        content = read_original(issue)
+    except OriginalUnavailable as exc:
+        return Response({"detail": str(exc)}, status=exc.status)
+    response = FileResponse(io.BytesIO(content), as_attachment=True,
         filename=issue.original_name, content_type="application/pdf")
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "no-store"
@@ -430,11 +453,25 @@ def resolve_manual(request, client_id, issue_id):
     return Response({"status": issue.status})
 
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([IsEmployeeOrAdmin])
 @throttle_classes([ImportThrottle])
 def sync_drive(request, client_id):
-    if request.user.role != "admin":
-        return Response({"detail": "Somente administradores podem sincronizar os originais."}, status=403)
     client = client_for(client_id)
-    return Response(sync_originals(ImportedFile.objects.filter(client=client)))
+    if request.method == "GET":
+        return Response(client_storage_summary(client))
+    if request.user.role != "admin":
+        return Response({"detail": "Somente administradores podem arquivar os originais."}, status=403)
+    return Response(sync_client_storage(client))
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsEmployeeOrAdmin])
+@throttle_classes([ImportThrottle])
+def storage_queue(request):
+    """Global, bounded queue used by the general PER/DCOMP import screen."""
+    if request.method == "GET":
+        return Response(global_storage_summary())
+    if request.user.role != "admin":
+        return Response({"detail": "Somente administradores podem arquivar os originais."}, status=403)
+    return Response(sync_all_storage())

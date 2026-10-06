@@ -1006,13 +1006,72 @@ class ImportTests(TestCase):
             result = sync_originals(queryset)
         self.assertEqual(result["status"], "pending")
         self.assertTrue(ImportedFile.objects.get().original_content)
+        stored = ImportedFile.objects.select_related("client", "document").get()
+        raw = bytes(stored.original_content)
+        properties = {"miele_client": str(self.customer.public_id), "miele_sha256": stored.sha256,
+            "miele_protocol": stored.document.protocol, "miele_kind": stored.kind}
+        metadata = {"id": "already-archived", "name": standardized_drive_name(stored),
+            "size": str(len(raw)), "md5Checksum": hashlib.md5(raw).hexdigest(),
+            "appProperties": properties, "parents": ["test-folder"], "trashed": False}
         with patch("apps.perdcomps.import_storage.GoogleDriveService") as mocked:
-            mocked.return_value._get_service.return_value.files.return_value.list.return_value.execute.return_value = {"files": [{"id": "already-archived"}]}
+            mocked.return_value._get_service.return_value.files.return_value.list.return_value.execute.return_value = {"files": [metadata]}
+            mocked.return_value.get_file_metadata.return_value = metadata
             result = sync_originals(queryset)
-            mocked.return_value.upload_stream.assert_not_called()
+            mocked.return_value.upload_stream_metadata.assert_not_called()
         self.assertEqual(result["status"], "synced")
-        self.assertEqual(ImportedFile.objects.get().drive_file_id, "already-archived")
+        stored.refresh_from_db()
+        self.assertEqual(stored.drive_file_id, "already-archived")
+        self.assertIsNone(stored.original_content)
+        self.assertEqual(stored.drive_size, len(raw))
+        self.assertIsNotNone(stored.database_released_at)
         self.assertEqual(ImportedFile.objects.count(), 1)
+
+    @override_settings(GDRIVE_CLIENT_ID="test", GDRIVE_CLIENT_SECRET="test", GDRIVE_REFRESH_TOKEN="test", GDRIVE_PERDCOMPS_FOLDER_ID="test-folder")
+    def test_verified_upload_releases_database_copy_and_drive_download_checks_hash(self):
+        from .import_storage import sync_originals
+        self.save([entry(demo())])
+        stored = ImportedFile.objects.select_related("client", "document").get()
+        raw = bytes(stored.original_content)
+        properties = {"miele_client": str(self.customer.public_id), "miele_sha256": stored.sha256,
+            "miele_protocol": stored.document.protocol, "miele_kind": stored.kind}
+        metadata = {"id": "uploaded-file", "name": standardized_drive_name(stored),
+            "size": str(len(raw)), "md5Checksum": hashlib.md5(raw).hexdigest(),
+            "appProperties": properties, "parents": ["test-folder"], "trashed": False}
+        with patch("apps.perdcomps.import_storage.GoogleDriveService") as mocked:
+            mocked.return_value._get_service.return_value.files.return_value.list.return_value.execute.return_value = {"files": []}
+            mocked.return_value.upload_stream_metadata.return_value = metadata
+            mocked.return_value.get_file_metadata.return_value = metadata
+            result = sync_originals(ImportedFile.objects.all())
+        self.assertEqual(result["released"], 1)
+        stored.refresh_from_db()
+        self.assertIsNone(stored.original_content)
+
+        api = APIClient(); api.force_authenticate(self.employee)
+        url = f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/files/{stored.public_id}/"
+        with patch("apps.perdcomps.import_storage.GoogleDriveService") as mocked:
+            mocked.return_value.download_stream.return_value = io.BytesIO(raw)
+            response = api.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), raw)
+
+        with patch("apps.perdcomps.import_storage.GoogleDriveService") as mocked:
+            mocked.return_value.download_stream.return_value = io.BytesIO(b"altered")
+            response = api.get(url)
+        self.assertEqual(response.status_code, 409)
+
+    @override_settings(GDRIVE_CLIENT_ID="", GDRIVE_CLIENT_SECRET="", GDRIVE_REFRESH_TOKEN="", GDRIVE_PERDCOMPS_FOLDER_ID="")
+    def test_storage_queue_status_is_visible_but_only_admin_can_run_it(self):
+        self.save([entry(demo())])
+        api = APIClient(); api.force_authenticate(self.employee)
+        url = "/api/v1/perdcomps/import/storage/"
+        response = api.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["pending"], 1)
+        self.assertEqual(api.post(url, {}).status_code, 403)
+        api.force_authenticate(self.admin)
+        response = api.post(url, {})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "database")
 
     @override_settings(GDRIVE_CLIENT_ID="test", GDRIVE_CLIENT_SECRET="test", GDRIVE_REFRESH_TOKEN="test", GDRIVE_PERDCOMPS_FOLDER_ID="")
     def test_drive_never_falls_back_to_root_folder(self):

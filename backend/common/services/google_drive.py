@@ -67,6 +67,14 @@ class GoogleDriveService:
         """
         Faz upload agindo como o usuário autenticado via OAuth.
         """
+        return self.upload_stream_metadata(
+            file_obj, filename, entity_type, mime_type, app_properties=app_properties
+        ).get("id")
+
+    def upload_stream_metadata(
+        self, file_obj, filename: str, entity_type: str, mime_type: str, app_properties=None
+    ) -> dict:
+        """Upload a file and return enough metadata to verify durable storage."""
         service = self._get_service()
 
         parent_id = self.folder_map.get(entity_type)
@@ -85,12 +93,34 @@ class GoogleDriveService:
         try:
             file = (
                 service.files()
-                .create(body=file_metadata, media_body=media, fields="id")
+                .create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields="id,name,size,md5Checksum,appProperties,parents,trashed",
+                    supportsAllDrives=True,
+                )
                 .execute()
             )
-            return file.get("id")
+            return file
         except HttpError as e:
             logger.error(f"Erro de I/O no Google Drive (OAuth): {e}")
+            raise
+
+    def get_file_metadata(self, file_id: str) -> dict:
+        """Return metadata used by callers to verify an uploaded original."""
+        service = self._get_service()
+        try:
+            return (
+                service.files()
+                .get(
+                    fileId=file_id,
+                    fields="id,name,size,md5Checksum,appProperties,parents,trashed",
+                    supportsAllDrives=True,
+                )
+                .execute()
+            )
+        except HttpError as e:
+            logger.error(f"Erro ao consultar arquivo {file_id}: {e}")
             raise
 
     def download_stream(self, file_id: str) -> io.BytesIO:

@@ -32,13 +32,13 @@ Campos preenchidos pelo PDF: número/protocolo, processo, datas, tributo, valor 
 4. Marque somente documentos conferidos. Retificadoras e alterações exigem justificativa.
 5. Para um arquivo inválido que precisa ser preservado, marque **Enviar para tratamento manual**. Não marque arquivos de outro cliente.
 6. Um usuário interno aprovado confirma. Toda substituição financeira exige autorização individual e justificativa.
-7. Confira a lista operacional. A sincronização posterior com o Drive é opcional e guarda apenas uma cópia dos originais.
+7. Confira a lista operacional e, para liberar espaço do PostgreSQL, clique **Arquivar no Drive**. O processo continua em blocos pequenos, mostra o progresso e pode ser pausado ou retomado sem duplicar arquivos.
 
 ## Fila de tratamento manual
 
 Na mesma tela, o usuário pode baixar o PDF, abrir o cadastro manual, selecionar uma PER/DCOMP operacional do mesmo cliente e vinculá-la com justificativa, ou descartar a pendência com justificativa.
 
-Somente administradores concluem ou descartam pendências. Os arquivos ficam no banco e não são enviados ao Drive. O vínculo manual não altera campos nem valores da PER/DCOMP escolhida.
+Somente administradores concluem ou descartam pendências. Os PDFs da fila manual usam o mesmo arquivamento seguro no Drive. O vínculo manual não altera campos nem valores da PER/DCOMP escolhida.
 
 ## Arquivos analisados
 
@@ -63,10 +63,12 @@ py -3.11 backend/manage.py inspect_perdcomp_pdfs C:\Projetos\miele-frontend\PerD
 ## Armazenamento e auditoria
 
 - A prévia fica em memória e expira em uma hora; a confirmação reextrai e revalida os arquivos.
-- Originais, hashes, evidências, correções, justificativas e usuário são preservados.
+- Hashes, metadados, evidências, correções, justificativas e usuário são preservados no banco; o PDF original fica no Drive após a transição segura.
 - A publicação usa transação, bloqueio do cliente e restrições únicas contra duplicidade.
-- A cópia no Drive usa `GDRIVE_PERDCOMPS_FOLDER_ID` e não é requisito para o cadastro.
-- Falha no Drive não desfaz o cadastro e não apaga o PDF armazenado no banco.
+- O arquivamento usa `GDRIVE_PERDCOMPS_FOLDER_ID` e não é requisito para concluir o cadastro.
+- Primeiro o PDF é salvo no banco. O sistema envia ao Drive, relê os metadados e confere pasta, tamanho, MD5, SHA-256 e titular. Só depois dessa verificação o binário temporário é removido do PostgreSQL.
+- Falha ou divergência no Drive não desfaz o cadastro nem remove o PDF do banco. A fila pode ser retomada sem duplicação.
+- Ao baixar um original, a API usa a cópia transitória do banco ou busca o arquivo no Drive de forma transparente e confere novamente o SHA-256 antes de entregá-lo.
 - A importação registra compensação declarada quando a fórmula operacional é coerente e o usuário confirma. Não presume recebimento, homologação, honorários, Selic ou decisões da Receita.
 - Se o total declarado superar o valor hoje mapeado como Pedido, os dados documentais são preservados e a aplicação financeira fica pendente de regra, sem saldo negativo.
 - No Drive, os nomes seguem `CNPJ_TIPO_PROTOCOLO_DATA_PAPEL_HASH12.pdf`. O hash evita colisões e o nome original permanece no banco.
@@ -81,7 +83,8 @@ Prefixo: `/api/v1/clients/{client_uuid}/perdcomp-imports/`.
 - `GET reprocess/preview/` e `POST reprocess/confirm/`: registra documentos já armazenados;
 - `POST preview-file/`, `GET documents/` e `GET files/{file_uuid}/`;
 - `GET manual/{issue_uuid}/file/` e `POST manual/{issue_uuid}/resolve/`;
-- `POST sync-drive/`, somente por administrador.
+- `GET sync-drive/` consulta o progresso do cliente e `POST sync-drive/` arquiva um bloco, somente por administrador;
+- `GET/POST /api/v1/perdcomps/import/storage/` consulta/processa a fila global usada pela importação geral.
 
 Limites: 100 arquivos, 10 MB por PDF, 50 MB por lote/ZIP, 100 páginas por PDF, 500 por lote e 20 páginas que necessitem OCR direto no servidor. Pacotes OCR locais contêm até 49 PDFs, 45 MB e 500 páginas; o servidor confere hashes e não repete o OCR. ZIP aninhado, traversal, symlink, item criptografado, arquivo não declarado e compressão excessiva são rejeitados. DBK continua fora do escopo.
 
@@ -104,6 +107,7 @@ O botão **Importar** da aba geral de PER/DCOMPs usa o mesmo fluxo e aceita um P
 - `0008_documentarycredit_importbatch_importeddocument_and_more`: documentos e auditoria.
 - `0009_manualimportissue`: fila de tratamento manual.
 - `0010_importeddocument_superseded_by_and_more`: versões, situações separadas e valores documentais normalizados.
+- `0011_importedfile_database_released_at_and_more`: transição verificada para o Drive, liberação do binário no banco e suporte aos PDFs da fila manual.
 
 As migrações não convertem nem alteram valores de PER/DCOMPs antigas. Somente uma confirmação explícita pode criar, atualizar ou vincular registros operacionais.
 
