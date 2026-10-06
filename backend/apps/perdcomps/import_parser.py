@@ -4,7 +4,7 @@ import unicodedata
 from datetime import datetime
 from decimal import Decimal
 
-VERSION = "web82-83-documentary-5"
+VERSION = "web82-83-documentary-6"
 PROTOCOL = r"\d{5}\.\d{5}\.\d{6}\.\d\.\d\.\d{2}-\d{4}"
 CNPJ = r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}"
 MONEY = r"(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}"
@@ -121,6 +121,14 @@ class Reader:
                 continue
             raw = match[1].strip()
             evidence_row = row
+            if key == "quarter":
+                # OCR engines commonly render the masculine ordinal indicator
+                # in "4º Trimestre" as a degree sign or a plain letter o.
+                # Normalize only the complete, supported quarter expression;
+                # the original line remains preserved in the evidence.
+                quarter = re.fullmatch(r"([1-4])\s*[º°o]\s*Trimestre", raw, re.I)
+                if quarter:
+                    raw = f"{quarter[1]}º Trimestre"
             if raw.startswith("DCTFWeb") and "DCTFWeb" not in label:
                 continue
             if kind == "text" and key in ("name", "nature", "revenue", "code_description"):

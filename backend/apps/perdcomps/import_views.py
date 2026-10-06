@@ -24,7 +24,7 @@ from .import_service import (
     reprocess_manifest, reprocess_documents,
 )
 from .import_storage import sync_originals
-from .import_parser import digits
+from .import_parser import digits, valid_cnpj
 
 SALT = "miele.perdcomp.documentary.preview.v1"
 REPROCESS_SALT = "miele.perdcomp.reprocess.preview.v1"
@@ -57,21 +57,7 @@ def read_input(request):
     return entries, changes
 
 
-def client_from_entries(entries):
-    """Resolve one client from the principal CNPJ extracted from an upload."""
-    cnpjs = sorted({digits(entry["extraction"]["fields"].get("cnpj"))
-                    for entry in entries if entry["extraction"]["fields"].get("cnpj")})
-    cnpjs = [cnpj for cnpj in cnpjs if cnpj]
-    if not cnpjs:
-        raise ImportProblem(
-            "Não foi possível identificar o CNPJ titular. Confira o PDF ou importe pelo cadastro do cliente."
-        )
-    if len(cnpjs) > 1:
-        formatted = ", ".join(cnpjs)
-        raise ImportProblem(
-            f"O lote contém mais de um CNPJ titular ({formatted}). Separe um cliente por lote."
-        )
-
+def client_from_cnpj(cnpj, required=True):
     normalized = Replace(
         Replace(
             Replace(Replace(F("cnpj"), Value("."), Value("")), Value("/"), Value("")),
@@ -81,14 +67,77 @@ def client_from_entries(entries):
     )
     matches = list(Client.objects.filter(deleted_at__isnull=True)
                    .annotate(normalized_cnpj=normalized)
-                   .filter(normalized_cnpj=cnpjs[0])[:2])
+                   .filter(normalized_cnpj=cnpj)[:2])
     if not matches:
-        raise ClientNotFoundForImport(cnpjs[0])
+        if required:
+            raise ClientNotFoundForImport(cnpj)
+        return None
     if len(matches) > 1:
         raise ImportProblem(
-            f"Mais de um cliente corresponde ao CNPJ {cnpjs[0]}. Corrija o cadastro antes de importar."
+            f"Mais de um cliente corresponde ao CNPJ {cnpj}. Corrija o cadastro antes de importar."
         )
     return matches[0]
+
+
+def partition_entries(entries):
+    """Partition a mixed upload without guessing ownership of ambiguous files."""
+    partitions = {}
+    pending = []
+    protocol_owners = {}
+    for entry in entries:
+        fields = entry["extraction"].get("fields", {})
+        cnpj = digits(fields.get("cnpj"))
+        protocol = digits(fields.get("protocol"))
+        if valid_cnpj(cnpj):
+            partitions.setdefault(cnpj, []).append(entry)
+            if protocol:
+                protocol_owners.setdefault(protocol, set()).add(cnpj)
+        else:
+            pending.append(entry)
+
+    unassigned = []
+    for entry in pending:
+        protocol = digits(entry["extraction"].get("fields", {}).get("protocol"))
+        owners = protocol_owners.get(protocol, set()) if protocol else set()
+        if len(owners) == 1:
+            partitions.setdefault(next(iter(owners)), []).append(entry)
+        else:
+            unassigned.append(entry)
+    return partitions, unassigned
+
+
+def client_payload(client):
+    return {
+        "id": str(client.public_id),
+        "cnpj": client.cnpj,
+        "razao_social": client.razao_social,
+        "nome_fantasia": client.nome_fantasia,
+    }
+
+
+def source_summary(entry):
+    extraction = entry["extraction"]
+    return {
+        "index": entry["index"],
+        "name": entry["name"],
+        "sha256": entry["sha256"],
+        "pages": entry["pages"],
+        "status": extraction.get("status"),
+        "issues": extraction.get("issues", []),
+    }
+
+
+def signed_client_preview(client, scoped_entries, all_entries, changes, user, include_unassigned):
+    result = build_preview(client, scoped_entries)
+    result["client"] = client_payload(client)
+    result["token"] = signing.dumps({
+        "client": str(client.public_id),
+        "user": user.pk,
+        "manifest": manifest(all_entries, changes),
+        "scope_cnpj": digits(client.cnpj),
+        "include_unassigned": include_unassigned,
+    }, salt=SALT, compress=True)
+    return result
 
 
 @api_view(["POST"])
@@ -96,23 +145,53 @@ def client_from_entries(entries):
 @parser_classes([MultiPartParser, FormParser])
 @throttle_classes([ImportThrottle])
 def automatic_preview(request):
-    """Build a normal preview after safely resolving the client by CNPJ."""
+    """Build one preview or offer safe client selection for a mixed upload."""
     try:
         entries, changes = read_input(request)
-        client = client_from_entries(entries)
-        result = build_preview(client, entries)
-        result["client"] = {
-            "id": str(client.public_id),
-            "cnpj": client.cnpj,
-            "razao_social": client.razao_social,
-            "nome_fantasia": client.nome_fantasia,
-        }
-        result["token"] = signing.dumps({
-            "client": str(client.public_id),
-            "user": request.user.pk,
-            "manifest": manifest(entries, changes),
-        }, salt=SALT, compress=True)
-        return Response(result)
+        partitions, unassigned = partition_entries(entries)
+        if not partitions:
+            raise ImportProblem(
+                "Não foi possível identificar o CNPJ titular. Confira o PDF ou importe pelo cadastro do cliente."
+            )
+        if len(partitions) == 1:
+            cnpj, scoped = next(iter(partitions.items()))
+            client = client_from_cnpj(cnpj)
+            return Response(signed_client_preview(
+                client, scoped + unassigned, entries, changes, request.user, True,
+            ))
+
+        options = []
+        for cnpj, scoped in sorted(partitions.items()):
+            client = client_from_cnpj(cnpj, required=False)
+            option = {
+                "cnpj": cnpj,
+                "registered": client is not None,
+                "client": client_payload(client) if client else None,
+                "file_count": len(scoped),
+                "document_count": len({digits(entry["extraction"].get("fields", {}).get("protocol"))
+                                       for entry in scoped
+                                       if digits(entry["extraction"].get("fields", {}).get("protocol"))}),
+            }
+            if client:
+                option["preview"] = signed_client_preview(
+                    client, scoped, entries, changes, request.user, False,
+                )
+                option["importable"] = option["preview"]["counts"]["importable"]
+                option["rejected"] = option["preview"]["counts"]["rejected"]
+            else:
+                option.update(importable=0, rejected=0)
+            options.append(option)
+        return Response({
+            "selection_required": True,
+            "clients": options,
+            "unassigned_files": [source_summary(entry) for entry in unassigned],
+            "counts": {
+                "files": len(entries),
+                "clients": len(options),
+                "unassigned": len(unassigned),
+            },
+            "notice": "Selecione um cliente. Somente os PDFs associados a ele serão apresentados e registrados.",
+        })
     except ClientNotFoundForImport as exc:
         return Response({
             "detail": str(exc),
@@ -132,9 +211,19 @@ def preview(request, client_id):
     client = client_for(client_id)
     try:
         entries, changes = read_input(request)
-        result = build_preview(client, entries)
-        result["token"] = signing.dumps({"client": str(client_id), "user": request.user.pk,
-            "manifest": manifest(entries, changes)}, salt=SALT, compress=True)
+        partitions, unassigned = partition_entries(entries)
+        target_cnpj = digits(client.cnpj)
+        scoped = partitions.get(target_cnpj, []) + unassigned
+        if not scoped:
+            detected = ", ".join(sorted(partitions)) or "nenhum"
+            raise ImportProblem(
+                f"Nenhum PDF deste lote pertence ao cliente selecionado. CNPJs identificados: {detected}."
+            )
+        result = signed_client_preview(client, scoped, entries, changes, request.user, True)
+        result["batch_selection"] = {
+            "other_clients_ignored": sum(len(value) for key, value in partitions.items() if key != target_cnpj),
+            "unassigned_included": len(unassigned),
+        }
         return Response(result)
     except ImportProblem as exc:
         return Response({"detail": str(exc)}, status=400)
@@ -153,6 +242,18 @@ def confirm(request, client_id):
         entries, changes = read_input(request)
         if manifest(entries, changes) != token.get("manifest"):
             raise ImportProblem("Arquivos ou correções mudaram. Gere uma nova prévia.")
+        if token.get("scope_cnpj"):
+            target_cnpj = digits(client.cnpj)
+            if token["scope_cnpj"] != target_cnpj:
+                raise ImportProblem("Prévia pertence a outro CNPJ.")
+            partitions, unassigned = partition_entries(entries)
+            entries = list(partitions.get(target_cnpj, []))
+            if token.get("include_unassigned"):
+                entries += unassigned
+            scoped_hashes = {entry["sha256"] for entry in entries}
+            changes = [change for change in changes if change.get("sha256") in scoped_hashes]
+            if not entries:
+                raise ImportProblem("Nenhum PDF do cliente selecionado permanece neste lote.")
         selected = json.loads(request.data.get("selected", "[]"))
         manual_selected = json.loads(request.data.get("manual_selected", "[]"))
         financial_confirmed = json.loads(request.data.get("financial_confirmed", "[]"))

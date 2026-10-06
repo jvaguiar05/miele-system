@@ -4,7 +4,7 @@
 
 **PER/DCOMP → Importar** para identificação automática pelo CNPJ, ou **Clientes → abrir cliente → PER/DCOMPs → Importação em lote** para trabalhar dentro de um cliente já conhecido.
 
-É possível enviar um único PDF, vários PDFs, um ZIP comum ou um pacote `.miele.zip` preparado pela ferramenta local. Cada envio pertence a um único cliente. Na aba geral, o sistema identifica o cliente pelo CNPJ principal extraído; dentro do cliente, o CNPJ precisa coincidir com o cadastro aberto. A prévia não grava dados; um administrador ou funcionário aprovado pode confirmar depois de conferir as diferenças.
+É possível enviar um único PDF, vários PDFs, um ZIP comum ou um ou mais pacotes `.miele.zip` preparados pela ferramenta local. Na aba geral, o sistema separa o lote pelo CNPJ principal extraído e permite escolher um cliente por vez. Dentro do cadastro de um cliente, somente os PDFs do CNPJ aberto são apresentados; arquivos reconhecidos como pertencentes a outros clientes são ignorados com segurança. A prévia não grava dados; um administrador ou funcionário aprovado pode confirmar depois de conferir as diferenças.
 
 Para grandes lotes que exigem OCR, consulte [Miele OCR Local](MIELE_OCR_LOCAL.md). O computador executa o trabalho pesado e o backend continua responsável por integridade, validação, confirmação e auditoria.
 
@@ -97,7 +97,7 @@ Limites: 100 arquivos, 10 MB por PDF, 50 MB por lote/ZIP, 100 páginas por PDF, 
 - Recibos retificadores reconhecem separadamente o protocolo vigente em **Número do Pedido Retificador** e a versão anterior em **Número do PER Retificado**.
 - Em débitos com a seção **Valores Compensados**, os valores dessa seção prevalecem sobre o principal original. Multa ou juros omitidos só são inferidos como zero quando a aritmética exibida no próprio documento fecha exatamente; o principal original permanece na auditoria.
 
-O botão **Importar** da aba geral de PER/DCOMPs usa o mesmo fluxo e aceita um PDF, múltiplos PDFs ou ZIP. O cliente é reconhecido automaticamente pelo CNPJ principal e mostrado na prévia. Se houver mais de um CNPJ no envio, a prévia é bloqueada e os arquivos devem ser separados por cliente. Quando nenhum CNPJ puder ser identificado, a importação deve ser iniciada dentro do cadastro do cliente para uma conferência manual segura.
+O botão **Importar** da aba geral de PER/DCOMPs usa o mesmo fluxo e aceita um PDF, múltiplos PDFs, ZIP ou vários pacotes `.miele.zip`. Quando houver mais de um CNPJ, a tela lista os clientes e a quantidade de PDFs de cada um. O usuário escolhe um cliente, confere e registra somente os documentos dele; depois pode continuar com os demais sem reenviar o lote. Arquivos sem CNPJ somente são associados por protocolo quando existe um único titular possível. Arquivos ambíguos nunca são atribuídos por suposição e devem ser importados dentro do cadastro correto para conferência.
 
 ## Migrações e validação
 

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import zipfile
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.test import TestCase, SimpleTestCase, override_settings
 from django.test import TransactionTestCase
@@ -248,6 +249,14 @@ class ParserTests(SimpleTestCase):
         self.assertEqual(unknown["status"], "review")
         self.assertIn("Leiaute não homologado", unknown["issues"][0])
 
+    def test_ocr_quarter_ordinal_variants_are_normalized(self):
+        for symbol in ("º", "°", "o"):
+            with self.subTest(symbol=symbol):
+                result = parse_pages([receipt().replace("1º Trimestre", f"1{symbol} Trimestre")])
+                self.assertEqual(result["status"], "ready", result["issues"])
+                self.assertEqual(result["fields"]["quarter"], "1º Trimestre")
+                self.assertEqual(result["evidence"]["quarter"]["value"], "1º Trimestre")
+
     def test_zero_is_not_missing(self):
         result = parse_pages([demo(P2, reference=P1, debt=True)])
         self.assertEqual(result["fields"]["declared_selic"], "0.00")
@@ -478,6 +487,7 @@ class FileTests(SimpleTestCase):
 
 class ImportTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.customer = Client.objects.create(razao_social="Test Import", cnpj=CNPJ)
         self.other = Client.objects.create(razao_social="Other", cnpj=OTHER)
         self.admin = get_user_model().objects.create_user(username="import-admin", email="import@example.test", role="admin", approval_status="approved")
@@ -834,19 +844,137 @@ class ImportTests(TestCase):
         )
         self.assertTrue(preview["groups"][0]["ocr_used"])
 
-    def test_main_import_rejects_batch_with_multiple_clients(self):
+    def test_main_import_partitions_multiple_clients_and_confirms_one_at_a_time(self):
+        api = APIClient()
+        api.force_authenticate(self.employee)
+
+        def uploads():
+            return [
+                SimpleUploadedFile("customer-demo.pdf", pdf(demo())),
+                SimpleUploadedFile("customer-receipt.pdf", pdf(receipt())),
+                SimpleUploadedFile("other.pdf", pdf(receipt(protocol=P2, cnpj=OTHER))),
+            ]
+
+        response = api.post(
+            "/api/v1/perdcomps/import/preview/",
+            {"files": uploads()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["selection_required"])
+        self.assertEqual(response.data["counts"], {"files": 3, "clients": 2, "unassigned": 0})
+
+        customer_option = next(
+            option for option in response.data["clients"] if option["cnpj"] == digits(CNPJ)
+        )
+        other_option = next(
+            option for option in response.data["clients"] if option["cnpj"] == digits(OTHER)
+        )
+        self.assertTrue(customer_option["registered"])
+        self.assertEqual(customer_option["client"]["id"], str(self.customer.public_id))
+        self.assertEqual(customer_option["file_count"], 2)
+        self.assertEqual(customer_option["preview"]["counts"]["documents"], 1)
+        self.assertEqual(customer_option["preview"]["groups"][0]["completeness"], "complete")
+        self.assertEqual(other_option["file_count"], 1)
+
+        confirmed = api.post(
+            f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/confirm/",
+            {
+                "files": uploads(),
+                "token": customer_option["preview"]["token"],
+                "selected": json.dumps([digits(P1)]),
+            },
+            format="multipart",
+        )
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        self.assertEqual(ImportedDocument.objects.count(), 1)
+        self.assertEqual(ImportedDocument.objects.get().client, self.customer)
+        self.assertEqual(ImportedFile.objects.count(), 2)
+
+        confirmed = api.post(
+            f"/api/v1/clients/{self.other.public_id}/perdcomp-imports/confirm/",
+            {
+                "files": uploads(),
+                "token": other_option["preview"]["token"],
+                "selected": json.dumps([digits(P2)]),
+            },
+            format="multipart",
+        )
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        self.assertEqual(ImportedDocument.objects.count(), 2)
+        self.assertEqual(ImportedFile.objects.count(), 3)
+
+    def test_explicit_client_preview_ignores_files_from_other_known_clients(self):
+        api = APIClient()
+        api.force_authenticate(self.employee)
+
+        def uploads():
+            return [
+                SimpleUploadedFile("customer.pdf", pdf(receipt())),
+                SimpleUploadedFile("other.pdf", pdf(receipt(protocol=P2, cnpj=OTHER))),
+            ]
+
+        response = api.post(
+            f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/preview/",
+            {"files": uploads()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["counts"]["files"], 1)
+        self.assertEqual(response.data["batch_selection"]["other_clients_ignored"], 1)
+        self.assertEqual(response.data["groups"][0]["fields"]["cnpj"], CNPJ)
+
+        confirmed = api.post(
+            f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/confirm/",
+            {
+                "files": uploads(),
+                "token": response.data["token"],
+                "selected": json.dumps([digits(P1)]),
+            },
+            format="multipart",
+        )
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        self.assertEqual(ImportedDocument.objects.count(), 1)
+        self.assertEqual(ImportedFile.objects.count(), 1)
+        self.assertEqual(ImportedDocument.objects.get().client, self.customer)
+
+    def test_main_import_lists_clients_from_multiple_local_ocr_packages(self):
+        api = APIClient()
+        api.force_authenticate(self.employee)
+        response = api.post(
+            "/api/v1/perdcomps/import/preview/",
+            {"files": [
+                SimpleUploadedFile("customer.miele.zip", local_ocr_package()),
+                SimpleUploadedFile(
+                    "other.miele.zip",
+                    local_ocr_package(text=receipt(protocol=P2, cnpj=OTHER), manifest_cnpj=OTHER),
+                ),
+            ]},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["selection_required"])
+        self.assertEqual(response.data["counts"]["clients"], 2)
+        for option in response.data["clients"]:
+            self.assertTrue(option["preview"]["groups"][0]["ocr_used"])
+
+    def test_main_import_marks_unregistered_client_in_mixed_batch(self):
+        Client.objects.filter(pk=self.other.pk).update(deleted_at=timezone.now())
         api = APIClient()
         api.force_authenticate(self.employee)
         response = api.post(
             "/api/v1/perdcomps/import/preview/",
             {"files": [
                 SimpleUploadedFile("customer.pdf", pdf(receipt())),
-                SimpleUploadedFile("other.pdf", pdf(receipt(protocol=P2, cnpj=OTHER))),
+                SimpleUploadedFile("new-client.pdf", pdf(receipt(protocol=P2, cnpj=OTHER))),
             ]},
             format="multipart",
         )
-        self.assertEqual(response.status_code, 400, response.data)
-        self.assertIn("mais de um CNPJ", response.data["detail"])
+        self.assertEqual(response.status_code, 200, response.data)
+        option = next(item for item in response.data["clients"] if item["cnpj"] == digits(OTHER))
+        self.assertFalse(option["registered"])
+        self.assertIsNone(option["client"])
+        self.assertNotIn("preview", option)
 
     def test_main_import_offers_structured_client_creation(self):
         Client.objects.filter(pk=self.other.pk).update(deleted_at=timezone.now())

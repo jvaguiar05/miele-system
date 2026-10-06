@@ -8,7 +8,7 @@ Ferramenta para preparar grandes volumes de PDFs no computador do usuário, sem 
 2. Páginas sem camada de texto passam por RapidOCR/ONNX localmente.
 3. CNPJ, protocolo e leiaute são avaliados pelo mesmo parser usado pelo Miele.
 4. Os arquivos são separados por CNPJ e divididos automaticamente em pacotes seguros.
-5. O usuário envia cada `.miele.zip` no botão **Importar** do Miele.
+5. O usuário pode selecionar um ou vários `.miele.zip` no botão **Importar** do Miele.
 6. O backend confere SHA-256, CNPJ, estrutura e texto, gera a prévia e exige confirmação humana para documentos OCR.
 
 A ferramenta nunca acessa o PostgreSQL, não contém credenciais do Google Drive e não envia documentos pela internet.
@@ -71,12 +71,12 @@ miele_ocr_20261006_120000/
 ## Importar no Miele
 
 1. Abra **PER/DCOMP → Importar**.
-2. Selecione um arquivo `.miele.zip` da pasta `pacotes`.
-3. Clique em **Gerar prévia**.
-4. Confira CNPJ, protocolo, valores, relações e confiança do OCR no PDF original.
+2. Selecione um ou vários arquivos `.miele.zip` da pasta `pacotes`.
+3. Clique em **Gerar prévia**. Se houver mais de um CNPJ, escolha o cliente que deseja registrar primeiro.
+4. O sistema mostrará somente os PDFs associados ao cliente escolhido. Confira CNPJ, protocolo, valores, relações e confiança do OCR no PDF original.
 5. Corrija somente os campos permitidos quando necessário.
 6. Marque a confirmação de OCR e informe uma justificativa.
-7. Confirme o registro.
+7. Confirme o registro. Os demais clientes do mesmo lote continuam disponíveis para seleção, sem novo OCR ou reenvio.
 8. Sincronize os originais com o Google Drive pelo fluxo normal do Miele.
 
 Não extraia nem altere manualmente o conteúdo do `.miele.zip`. Qualquer mudança no PDF, no manifesto ou no texto quebra as validações de integridade.
