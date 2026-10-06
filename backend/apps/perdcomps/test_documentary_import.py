@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 from unittest.mock import patch
 import zipfile
 
@@ -436,6 +437,13 @@ class FileTests(SimpleTestCase):
         self.assertIn("error", extract_pdf(b"%PDF-broken"))
         entry_ = ingest([SimpleUploadedFile("scan.pdf", pdf())])[0]
         self.assertEqual(entry_["extraction"]["status"], "no_text")
+
+    @patch("apps.perdcomps.import_files.subprocess.run")
+    def test_slow_ocr_explains_the_local_package_alternative(self, run):
+        run.side_effect = subprocess.TimeoutExpired("ocr", 165)
+        result = extract_pdf(b"%PDF-slow-scan")
+        self.assertIn("Miele OCR Local", result["error"])
+        self.assertIn(".miele.zip", result["error"])
 
     def test_name_never_classifies(self):
         row = ingest([SimpleUploadedFile("DCOMP INSS.pdf", pdf(receipt()))])[0]

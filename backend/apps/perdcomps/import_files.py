@@ -31,10 +31,18 @@ def extract_pdf(raw, ocr_page_budget=MAX_OCR_PAGES, timeout=165):
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         if result.returncode or len(result.stdout) > 6000000:
-            return {"error": "PDF excedeu os recursos de leitura permitidos."}
+            return {"error": (
+                "Este PDF em imagem excedeu os recursos seguros do servidor. "
+                "Prepare-o com o Miele OCR Local e envie o pacote .miele.zip "
+                "pelo mesmo botão Importar."
+            )}
         return json.loads(result.stdout)
     except (subprocess.TimeoutExpired, ValueError):
-        return {"error": "PDF excedeu o tempo de leitura/OCR ou não pôde ser interpretado. Divida o lote."}
+        return {"error": (
+            "Este PDF em imagem excedeu o tempo seguro do servidor. Prepare-o "
+            "com o Miele OCR Local e envie o pacote .miele.zip pelo mesmo botão "
+            "Importar."
+        )}
 
 
 def ingest(uploads):

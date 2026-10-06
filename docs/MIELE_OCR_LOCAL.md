@@ -16,7 +16,7 @@ A ferramenta nunca acessa o PostgreSQL, não contém credenciais do Google Drive
 ## Pré-requisitos
 
 - Windows PowerShell;
-- ambiente `C:\Projetos\miele-system\.venv` instalado;
+- ambiente `.venv`/`.venv-local` funcional ou Python 3.11 acessível pelo comando `py -3.11`;
 - dependências de `requirements\requirements.txt` instaladas;
 - espaço local suficiente para os pacotes gerados.
 
@@ -114,3 +114,7 @@ Confiança de OCR mede reconhecimento visual, não validade fiscal. O parser pod
 **O computador ficou lento**
 
 Interrompa após o arquivo atual e execute novamente com `-Workers 1`. Os originais não são modificados.
+
+**O PDF funciona no parser, mas o envio direto expira**
+
+PDFs em imagem com muitas páginas podem exceder o tempo seguro da instância online. Prepare somente esse arquivo com o comando da seção **Preparar uma pasta** e envie o `.miele.zip` criado pelo mesmo botão **Importar**. O resultado documental é o mesmo; o servidor confere novamente hashes, CNPJ e campos antes de permitir o registro.
