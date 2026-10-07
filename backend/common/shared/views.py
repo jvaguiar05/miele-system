@@ -2,7 +2,6 @@ import logging
 from rest_framework import viewsets, status, parsers
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from django.http import FileResponse
 from django.db import transaction
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
@@ -14,6 +13,7 @@ from .serializers import (
     AttachedFileUpdateSerializer,
 )
 from common.services.google_drive import drive_service
+from apps.identity.permissions import IsApprovedUserWithRoleAccess
 from .utils import resolve_entity
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
     lookup_field = "public_id"
     lookup_url_kwarg = "public_id"
     parser_classes = [parsers.MultiPartParser, parsers.FormParser]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApprovedUserWithRoleAccess]
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -297,12 +297,23 @@ class AttachedFileViewSet(viewsets.ModelViewSet):
         try:
             file_stream = drive_service.download_stream(instance.drive_file_id)
 
+            inline_mime_types = {
+                "application/pdf",
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+            }
+            mime_type = (instance.mime_type or "").lower()
+            can_preview_inline = mime_type in inline_mime_types
             response = FileResponse(
                 file_stream,
-                as_attachment=False,  # Inline display
+                as_attachment=not can_preview_inline,
                 filename=instance.file_name,
-                content_type=instance.mime_type,
+                content_type=(
+                    mime_type if can_preview_inline else "application/octet-stream"
+                ),
             )
+            response["X-Content-Type-Options"] = "nosniff"
             return response
 
         except Exception as e:

@@ -42,9 +42,11 @@ services:
         value: "40"
 
       - key: CORS_ALLOW_ALL_ORIGINS
-        value: "true"
+        value: "false"
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://miele-frontend-staging.vercel.app
       - key: ALLOWED_HOSTS
-        value: "*"
+        value: miele-backend-staging-r8hx.onrender.com
 
       - key: DATABASE_URL
         fromDatabase:
@@ -68,7 +70,7 @@ services:
         sync: false
 
       - key: GDRIVE_MAX_FILE_SIZE
-        value: "104857600"
+        value: "10485760"
       - key: GDRIVE_API_TIMEOUT
         value: "30"
       - key: GDRIVE_REQUESTS_PER_MINUTE
@@ -78,7 +80,7 @@ services:
 
 databases:
   - name: miele-staging-db
-    plan: free
+    plan: basic-256mb
     databaseName: miele_staging_db
     user: miele_staging
     region: oregon

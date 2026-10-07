@@ -14,6 +14,7 @@ from django.http import Http404
 
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
+from apps.identity.permissions import IsApprovedUserWithRoleAccess
 from common.shared.permissions import (
     IsOwnerOrAdminForAnnotations,
 )
@@ -228,7 +229,7 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         if self.action == "destroy":
             permission_classes = [IsAdminUser]
         else:
-            permission_classes = [IsAuthenticated]
+            permission_classes = [IsApprovedUserWithRoleAccess]
         return [permission() for permission in permission_classes]
 
     def perform_destroy(self, instance):
@@ -238,7 +239,6 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         instance.deleted_at = timezone.now()
         instance.is_active = False
         instance.save()
-
     @extend_schema(
         tags=["PER/DCOMPs"],
         summary="Atualizar campos sensíveis do PER/DCOMP",
@@ -507,7 +507,10 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
     serializer_class = PerDcompAnnotationSerializer
     lookup_field = "public_id"
     lookup_url_kwarg = "annotation_id"  # Use annotation_id from URL
-    permission_classes = [IsOwnerOrAdminForAnnotations]
+    permission_classes = [
+        IsApprovedUserWithRoleAccess,
+        IsOwnerOrAdminForAnnotations,
+    ]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["user_id"]
     search_fields = ["content"]
@@ -864,12 +867,3 @@ class PerDcompAnnotationViewSet(viewsets.ModelViewSet):
 
         instance.deleted_at = timezone.now()
         instance.save()
-
-    def get_permissions(self):
-        """Apenas o autor ou admin pode editar/deletar anotações."""
-        if self.action in ["update", "partial_update", "destroy"]:
-            permission_classes = [IsAuthenticated]
-            # Verificação adicional no get_object se necessário
-        else:
-            permission_classes = [IsAuthenticated]
-        return [permission() for permission in permission_classes]

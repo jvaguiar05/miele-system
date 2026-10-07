@@ -26,7 +26,7 @@ Implementar busca de dados de CNPJ no backend e preenchimento automático no for
   - Adicionado o cliente `api` para usar o `baseURL` configurado e autenticação já existente.
 
 ### Arquivos auxiliares criados/testados
-- `backend/test_lookup_cnpj.py` (script de verificação local)
+- `scripts/manual_lookup_cnpj.py` (script de verificação local)
 - `backend/tmp_verify_lookup.py` (script temporário de debug)
 
 ## Testes realizados

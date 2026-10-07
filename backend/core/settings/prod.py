@@ -9,6 +9,13 @@ DEBUG = False
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_SSL_REDIRECT = True  # Força redirecionamento para HTTPS
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Começa com uma janela curta e reversível. Depois da estabilização do
+# domínio oficial, este valor pode ser elevado gradualmente.
+SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=3600)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 
 # ==============================================================================
 # ARQUIVOS ESTÁTICOS (WHITENOISE)

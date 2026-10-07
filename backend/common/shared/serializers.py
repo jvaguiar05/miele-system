@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from drf_spectacular.utils import extend_schema_field
 from .models import (
@@ -111,29 +112,6 @@ class AnnotationBasicSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "user_name", "created_at"]
 
 
-class AttachedFileListSerializer(serializers.ModelSerializer):
-    """Para GET (Leitura)"""
-
-    id = serializers.UUIDField(source="public_id", read_only=True)
-    uploaded_by_name = serializers.CharField(
-        source="uploaded_by.username", read_only=True
-    )
-    file_size_human = serializers.CharField(read_only=True)
-
-    class Meta:
-        model = AttachedFile
-        fields = [
-            "id",
-            "file_name",
-            "file_type",
-            "file_size",
-            "file_size_human",
-            "uploaded_by_name",
-            "created_at",
-        ]
-
-
-from rest_framework import serializers
 from .models import AttachedFile, get_file_type_choices
 from .utils import resolve_entity
 
@@ -183,6 +161,17 @@ class AttachedFileCreateSerializer(serializers.Serializer):
 
     def validate_file_type(self, value):
         return value.lower()
+
+    def validate_file(self, value):
+        max_size = getattr(settings, "GDRIVE_MAX_FILE_SIZE", 10 * 1024 * 1024)
+        if value.size > max_size:
+            max_mb = max_size / (1024 * 1024)
+            raise serializers.ValidationError(
+                f"O arquivo excede o limite de {max_mb:g} MB."
+            )
+        if value.size == 0:
+            raise serializers.ValidationError("O arquivo enviado está vazio.")
+        return value
 
     def validate(self, attrs):
         """
@@ -253,6 +242,17 @@ class AttachedFileUpdateSerializer(serializers.ModelSerializer):
         write_only=True,
         help_text="Novo binário para substituir o atual",
     )
+
+    def validate_file(self, value):
+        max_size = getattr(settings, "GDRIVE_MAX_FILE_SIZE", 10 * 1024 * 1024)
+        if value.size > max_size:
+            max_mb = max_size / (1024 * 1024)
+            raise serializers.ValidationError(
+                f"O arquivo excede o limite de {max_mb:g} MB."
+            )
+        if value.size == 0:
+            raise serializers.ValidationError("O arquivo enviado está vazio.")
+        return value
 
     class Meta:
         model = AttachedFile

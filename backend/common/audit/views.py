@@ -7,6 +7,7 @@ from rest_framework.pagination import PageNumberPagination
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 from django.contrib.auth import get_user_model
+from apps.identity.permissions import IsAdmin
 
 from .models import AuditLog
 from .serializers import (
@@ -158,7 +159,7 @@ class AuditLogPagination(PageNumberPagination):
     responses={200: AuditLogSerializer(many=True)},
 )
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAdmin])
 def list_audit_logs(request):
     """Lista logs de auditoria com filtros e paginação."""
 
@@ -273,7 +274,7 @@ def list_audit_logs(request):
     responses={200: AuditLogSerializer(many=True)},
 )
 @api_view(["GET"])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAdmin])
 def recent_audit_logs(request):
     """Retorna logs recentes desde uma data específica."""
 

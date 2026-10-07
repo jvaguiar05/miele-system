@@ -67,6 +67,20 @@ class IsEmployeeOrAdmin(permissions.BasePermission):
         )
 
 
+class IsApprovedUserWithRoleAccess(permissions.BasePermission):
+    """Allow approved guests to read and employees/admins to make changes."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.approval_status != User.ApprovalStatus.APPROVED:
+            return False
+        if user.role == User.UserRole.GUEST:
+            return request.method in permissions.SAFE_METHODS
+        return user.role in [User.UserRole.EMPLOYEE, User.UserRole.ADMIN]
+
+
 class IsOwnerOrAdmin(permissions.BasePermission):
     """
     Permission to allow users to edit their own data or admins to edit any data

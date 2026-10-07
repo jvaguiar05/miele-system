@@ -412,7 +412,7 @@ GDRIVE_PERDCOMPS_FOLDER_ID = env("GDRIVE_PERDCOMPS_FOLDER_ID", default=None, cas
 
 # File size limits and timeouts
 GDRIVE_MAX_FILE_SIZE = env(
-    "GDRIVE_MAX_FILE_SIZE", default=100 * 1024 * 1024, cast=int  # 100MB
+    "GDRIVE_MAX_FILE_SIZE", default=10 * 1024 * 1024, cast=int  # 10MB
 )
 
 GDRIVE_API_TIMEOUT = env("GDRIVE_API_TIMEOUT", default=30, cast=int)  # seconds

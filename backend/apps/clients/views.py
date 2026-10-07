@@ -10,6 +10,7 @@ from drf_spectacular.openapi import OpenApiResponse, OpenApiExample
 
 from common.approvals.mixins import AutoApprovalFieldsMixin
 from common.permissions import IsAdminUser
+from apps.identity.permissions import IsApprovedUserWithRoleAccess
 from .models import Client, Address
 from common.shared.models import Annotation
 from .serializers import (
@@ -137,7 +138,7 @@ class ClientViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         if self.action == "destroy":
             permission_classes = [IsAdminUser]
         else:
-            permission_classes = [IsAuthenticated]
+            permission_classes = [IsApprovedUserWithRoleAccess]
         return [permission() for permission in permission_classes]
 
     def perform_destroy(self, instance):
@@ -424,7 +425,10 @@ class ClientAnnotationViewSet(viewsets.ModelViewSet):
     serializer_class = ClientAnnotationSerializer
     lookup_field = "public_id"
     lookup_url_kwarg = "annotation_id"  # Use annotation_id from URL
-    permission_classes = [IsOwnerOrAdminForAnnotations]
+    permission_classes = [
+        IsApprovedUserWithRoleAccess,
+        IsOwnerOrAdminForAnnotations,
+    ]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ["user_id"]
     search_fields = ["content"]
