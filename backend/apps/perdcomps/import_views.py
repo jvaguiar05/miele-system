@@ -32,6 +32,7 @@ from .import_storage import (
     sync_client_storage,
 )
 from .import_parser import digits, valid_cnpj
+from .ocr_quota import reserve_online_ocr, finalize_online_ocr
 
 SALT = "miele.perdcomp.documentary.preview.v1"
 REPROCESS_SALT = "miele.perdcomp.reprocess.preview.v1"
@@ -59,9 +60,26 @@ def read_input(request):
         changes = json.loads(request.data.get("changes", "[]"))
     except (ValueError, TypeError):
         raise ImportProblem("Revisões inválidas.") from None
-    entries = ingest(request.FILES.getlist("files"))
-    apply_reviews(entries, changes, request.user)
-    return entries, changes
+    quota = reserve_online_ocr(request.user)
+    try:
+        entries = ingest(request.FILES.getlist("files"), ocr_quota=quota)
+        apply_reviews(entries, changes, request.user)
+    finally:
+        quota_payload = finalize_online_ocr(quota)
+    return entries, changes, quota_payload
+
+
+def with_ocr_quota(payload, quota_payload):
+    if quota_payload is not None:
+        payload["ocr_quota"] = quota_payload
+    return payload
+
+
+def quota_problem(entries):
+    return next(
+        (entry.get("error") for entry in entries if entry.get("ocr_quota_exceeded")),
+        None,
+    )
 
 
 def client_from_cnpj(cnpj, required=True):
@@ -153,19 +171,24 @@ def signed_client_preview(client, scoped_entries, all_entries, changes, user, in
 @throttle_classes([ImportThrottle])
 def automatic_preview(request):
     """Build one preview or offer safe client selection for a mixed upload."""
+    quota_payload = None
     try:
-        entries, changes = read_input(request)
+        entries, changes, quota_payload = read_input(request)
         partitions, unassigned = partition_entries(entries)
         if not partitions:
+            quota_detail = quota_problem(entries)
+            if quota_detail:
+                raise ImportProblem(quota_detail)
             raise ImportProblem(
                 "Não foi possível identificar o CNPJ titular. Confira o PDF ou importe pelo cadastro do cliente."
             )
         if len(partitions) == 1:
             cnpj, scoped = next(iter(partitions.items()))
             client = client_from_cnpj(cnpj)
-            return Response(signed_client_preview(
+            result = signed_client_preview(
                 client, scoped + unassigned, entries, changes, request.user, True,
-            ))
+            )
+            return Response(with_ocr_quota(result, quota_payload))
 
         options = []
         for cnpj, scoped in sorted(partitions.items()):
@@ -190,6 +213,7 @@ def automatic_preview(request):
             options.append(option)
         return Response({
             "selection_required": True,
+            "ocr_quota": quota_payload,
             "clients": options,
             "unassigned_files": [source_summary(entry) for entry in unassigned],
             "counts": {
@@ -202,12 +226,13 @@ def automatic_preview(request):
     except ClientNotFoundForImport as exc:
         return Response({
             "detail": str(exc),
+            "ocr_quota": quota_payload,
             "code": "client_not_found",
             "cnpj": exc.cnpj,
             "can_create_client": True,
         }, status=404)
     except ImportProblem as exc:
-        return Response({"detail": str(exc)}, status=400)
+        return Response(with_ocr_quota({"detail": str(exc)}, quota_payload), status=400)
 
 
 @api_view(["POST"])
@@ -216,12 +241,16 @@ def automatic_preview(request):
 @throttle_classes([ImportThrottle])
 def preview(request, client_id):
     client = client_for(client_id)
+    quota_payload = None
     try:
-        entries, changes = read_input(request)
+        entries, changes, quota_payload = read_input(request)
         partitions, unassigned = partition_entries(entries)
         target_cnpj = digits(client.cnpj)
         scoped = partitions.get(target_cnpj, []) + unassigned
         if not scoped:
+            quota_detail = quota_problem(entries)
+            if quota_detail:
+                raise ImportProblem(quota_detail)
             detected = ", ".join(sorted(partitions)) or "nenhum"
             raise ImportProblem(
                 f"Nenhum PDF deste lote pertence ao cliente selecionado. CNPJs identificados: {detected}."
@@ -231,9 +260,9 @@ def preview(request, client_id):
             "other_clients_ignored": sum(len(value) for key, value in partitions.items() if key != target_cnpj),
             "unassigned_included": len(unassigned),
         }
-        return Response(result)
+        return Response(with_ocr_quota(result, quota_payload))
     except ImportProblem as exc:
-        return Response({"detail": str(exc)}, status=400)
+        return Response(with_ocr_quota({"detail": str(exc)}, quota_payload), status=400)
 
 
 @api_view(["POST"])
@@ -242,12 +271,16 @@ def preview(request, client_id):
 @throttle_classes([ImportThrottle])
 def confirm(request, client_id):
     client = client_for(client_id)
+    quota_payload = None
     try:
         token = signing.loads(request.data.get("token", ""), salt=SALT, max_age=3600)
         if token.get("client") != str(client_id) or token.get("user") != request.user.pk:
             raise ImportProblem("Prévia pertence a outro cliente ou usuário.")
-        entries, changes = read_input(request)
+        entries, changes, quota_payload = read_input(request)
         if manifest(entries, changes) != token.get("manifest"):
+            quota_detail = quota_problem(entries)
+            if quota_detail:
+                raise ImportProblem(quota_detail)
             raise ImportProblem("Arquivos ou correções mudaram. Gere uma nova prévia.")
         if token.get("scope_cnpj"):
             target_cnpj = digits(client.cnpj)
@@ -285,13 +318,17 @@ def confirm(request, client_id):
             "Registro concluído. Os PDFs estão protegidos no banco até serem "
             "verificados e arquivados no Google Drive."
         )
-        return Response(result)
+        return Response(with_ocr_quota(result, quota_payload))
     except signing.BadSignature:
         return Response({"detail": "Prévia inválida ou expirada. Gere uma nova prévia."}, status=400)
     except (ImportProblem, ValueError, TypeError) as exc:
-        return Response({"detail": str(exc) if isinstance(exc, ImportProblem) else "Dados de confirmação inválidos."}, status=400)
+        payload = {
+            "detail": str(exc) if isinstance(exc, ImportProblem) else "Dados de confirmação inválidos."
+        }
+        return Response(with_ocr_quota(payload, quota_payload), status=400)
     except (IntegrityError, OperationalError):
-        return Response({"detail": "Importação concorrente ou banco indisponível. Refaça a prévia antes de tentar novamente."}, status=409)
+        payload = {"detail": "Importação concorrente ou banco indisponível. Refaça a prévia antes de tentar novamente."}
+        return Response(with_ocr_quota(payload, quota_payload), status=409)
 
 
 @api_view(["POST"])
@@ -302,7 +339,7 @@ def preview_file(request, client_id):
     """Download a ZIP member/no-text PDF without persisting a staging batch."""
     client_for(client_id)
     try:
-        entries = ingest(request.FILES.getlist("files"))
+        entries = ingest(request.FILES.getlist("files"), process=False)
         target = next((e for e in entries if e["sha256"] == request.data.get("sha256") and e["raw"].startswith(b"%PDF-")), None)
         if not target:
             raise ImportProblem("PDF não encontrado neste lote.")

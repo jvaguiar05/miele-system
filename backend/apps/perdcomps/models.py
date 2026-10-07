@@ -239,7 +239,7 @@ class PerDcomp(models.Model):
 
 # Register the separate, non-financial documentary import models with Django.
 from .document_models import (  # noqa: E402,F401
-    ImportBatch, DocumentaryCredit, ImportedDocument, ImportedFile,
+    ImportBatch, OcrDailyUsage, DocumentaryCredit, ImportedDocument, ImportedFile,
     ManualImportIssue,
     DocumentRelation, DocumentDebt, DocumentCreditComponent,
     DocumentUtilization, DocumentReview, DocumentaryEvent,

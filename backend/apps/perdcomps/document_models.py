@@ -17,6 +17,18 @@ class ImportBatch(models.Model):
         constraints = [models.UniqueConstraint(fields=["client", "fingerprint"], name="unique_documentary_batch")]
 
 
+class OcrDailyUsage(models.Model):
+    """Durable daily meter for the bounded online OCR fallback."""
+
+    usage_date = models.DateField(unique=True)
+    global_pages = models.PositiveIntegerField(default=0)
+    per_user = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "perdcomp_ocr_daily_usage"
+
+
 class DocumentaryCredit(models.Model):
     client = models.ForeignKey("clients.Client", on_delete=models.PROTECT)
     origin_protocol = models.CharField(max_length=24)

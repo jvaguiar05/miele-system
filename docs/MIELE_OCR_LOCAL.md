@@ -4,117 +4,129 @@ Ferramenta para preparar grandes volumes de PDFs no computador do usuário, sem 
 
 ## Fluxo
 
-1. A ferramenta lê os PDFs da pasta informada sem mover ou alterar os originais.
+1. A ferramenta lê os PDFs sem mover ou alterar os originais.
 2. Páginas sem camada de texto passam por RapidOCR/ONNX localmente.
 3. CNPJ, protocolo e leiaute são avaliados pelo mesmo parser usado pelo Miele.
-4. Os arquivos são separados por CNPJ e divididos automaticamente em pacotes seguros.
-5. O usuário pode selecionar um ou vários `.miele.zip` no botão **Importar** do Miele.
-6. O backend confere SHA-256, CNPJ, estrutura e texto, gera a prévia e exige confirmação humana para documentos OCR.
+4. Os arquivos são separados por CNPJ e divididos em pacotes seguros.
+5. O usuário envia um ou vários `.miele.zip` pelo botão **Importar**.
+6. O backend confere estrutura, hashes, CNPJ e texto, recalcula os campos e exige conferência humana de todo documento preparado localmente.
 
-A ferramenta nunca acessa o PostgreSQL, não contém credenciais do Google Drive e não envia documentos pela internet.
+A ferramenta nunca acessa PostgreSQL, `.env` ou Google Drive e não envia documentos pela internet. O hash garante a consistência entre os itens do pacote, mas não prova sozinho que o OCR leu corretamente cada imagem. Confira sempre o PDF original antes de registrar.
 
-## Pré-requisitos
+## Instalação recomendada no Windows
 
-- Windows PowerShell;
-- ambiente `.venv`/`.venv-local` funcional ou Python 3.11 acessível pelo comando `py -3.11`;
-- dependências de `requirements\requirements.txt` instaladas;
-- espaço local suficiente para os pacotes gerados.
+Use o ZIP versionado **Miele OCR Local para Windows** publicado pela equipe:
 
-Para conferir o ambiente:
+1. baixe o ZIP de uma pasta oficial e confirme a versão esperada;
+2. extraia todo o conteúdo para uma pasta local;
+3. execute `Install-MieleOcrLocal.cmd`;
+4. autorize o download das dependências OCR quando solicitado;
+5. abra **Miele OCR Local** pelo Menu Iniciar.
+
+A instalação fica em `%LOCALAPPDATA%\Miele\OCR Local`, apenas para o usuário atual, e não exige administrador. O instalador exige Python 3.11 e nunca instala Python silenciosamente. Se ele estiver ausente, mostra instruções para instalação manual e a opção explícita por `winget`.
+
+No aplicativo, escolha uma pasta ou PDFs específicos. O processamento usa um worker, mostra o avanço arquivo por arquivo e abre a pasta `pacotes` ao terminar. A saída padrão fica em **Documentos\Miele OCR**.
+
+## Instalação para desenvolvimento
+
+Pré-requisitos: Windows PowerShell, Python 3.11 e espaço local suficiente.
 
 ```powershell
 cd C:\Projetos\miele-system
-.\.venv\Scripts\python.exe -c "import pypdf, pypdfium2, rapidocr, onnxruntime; print('OCR OK')"
+py -3.11 -m venv .venv-local
+.\.venv-local\Scripts\python.exe -m pip install -r requirements\ocr-local.txt
+.\.venv-local\Scripts\python.exe -c "import pypdf, pypdfium2, rapidocr, onnxruntime; print('OCR OK')"
 ```
 
-## Preparar uma pasta
+Ambientes virtuais copiados ou movidos entre computadores não são portáteis. Recrie a `.venv-local` se o Python original não existir mais.
+
+## Preparar arquivos pelo repositório
 
 ```powershell
 cd C:\Projetos\miele-system
 .\scripts\Build-MieleOcrPackage.ps1 `
   -InputPath "C:\Caminho\Dos\PDFs" `
-  -OutputDirectory "C:\MieleOCR\Saida" `
+  -OutputDirectory "$HOME\Documents\Miele OCR" `
   -Workers 1
 ```
 
-Também é possível informar um único PDF:
+Também é possível informar um único PDF. Use um worker inicialmente. Em computador com pelo menos 16 GB de RAM, dois podem ser testados; o limite é quatro.
 
-```powershell
-.\scripts\Build-MieleOcrPackage.ps1 `
-  -InputPath "C:\Caminho\documento.pdf" `
-  -OutputDirectory "C:\MieleOCR\Saida"
-```
+## Quando usar OCR online ou local
 
-Use `-Workers 1` inicialmente. Em computador com pelo menos 16 GB de RAM, `-Workers 2` pode ser testado. O limite aceito é quatro, mas paralelismo excessivo pode deixar o computador lento.
+Use o OCR online para arquivos pequenos e ocasionais: até 5 páginas que precisem de OCR por operação, 10 páginas executadas por usuário ao dia e 40 páginas executadas pelo sistema ao dia. A prévia e a confirmação contam separadamente porque o servidor executa o OCR nas duas etapas. PDFs que já possuem texto e pacotes `.miele.zip` não consomem essa cota.
+
+Para volumes acima desses limites, prepare os arquivos com o Miele OCR Local. Os números são configuráveis pela equipe e podem ser ajustados conforme a capacidade do ambiente; a mensagem exibida pelo sistema é a referência para a configuração vigente.
 
 ## Resultado
 
-A ferramenta cria uma pasta datada:
+Cada execução cria uma pasta datada:
 
 ```text
-miele_ocr_20261006_120000/
-├── pacotes/
-│   ├── 23451982000133_parte_001.miele.zip
-│   └── 23451982000133_parte_002.miele.zip
-├── relatorio.csv
-└── resumo.json
+miele_ocr_20261007_120000/
+|-- pacotes/
+|   |-- 23451982000133_parte_001.miele.zip
+|   `-- 23451982000133_parte_002.miele.zip
+|-- relatorio.csv
+`-- resumo.json
 ```
 
 - Cada pacote possui somente um CNPJ.
-- Cada pacote contém até 49 PDFs, até 45 MB e no máximo 500 páginas.
+- Cada pacote contém até 49 PDFs, até 45 MB de PDFs + extrações, no máximo 500 páginas e até 10 MB de texto extraído.
+- Cada PDF tem no máximo 10 MB, 100 páginas e 2 MB de texto extraído.
 - Arquivos repetidos são eliminados pelo SHA-256.
 - `relatorio.csv` mostra CNPJ, protocolo, páginas, confiança e pendências.
-- `READY` significa que o parser reconheceu os campos mínimos.
-- `REVIEW` significa que o pacote pode ser aberto no Miele, mas o documento exigirá correção ou tratamento manual.
-- Arquivos sem CNPJ seguro aparecem no relatório e não entram em pacote algum.
+- `READY` indica que o parser reconheceu os campos mínimos.
+- `REVIEW` indica que o documento exigirá correção ou tratamento manual no Miele.
+- Arquivos sem CNPJ seguro aparecem no relatório e não entram em pacote.
 
 ## Importar no Miele
 
 1. Abra **PER/DCOMP → Importar**.
-2. Selecione um ou vários arquivos `.miele.zip` da pasta `pacotes`.
-3. Clique em **Gerar prévia**. Se houver mais de um CNPJ, escolha o cliente que deseja registrar primeiro.
-4. O sistema mostrará somente os PDFs associados ao cliente escolhido. Confira CNPJ, protocolo, valores, relações e confiança do OCR no PDF original.
-5. Corrija somente os campos permitidos quando necessário.
-6. Marque a confirmação de OCR e informe uma justificativa.
-7. Confirme o registro. Os demais clientes do mesmo lote continuam disponíveis para seleção, sem novo OCR ou reenvio.
+2. Selecione os `.miele.zip` da pasta `pacotes`.
+3. Gere a prévia e, em lote multi-CNPJ, escolha um cliente por vez.
+4. Confira CNPJ, protocolo, valores, relações, confiança e PDF original.
+5. Corrija somente os campos permitidos.
+6. Marque a confirmação da preparação local e informe uma justificativa. Isso também é obrigatório quando o pacote encontrou texto nativo, pois a extração ocorreu fora do servidor.
+7. Confirme o registro e continue com os outros clientes do lote.
 8. Sincronize os originais com o Google Drive pelo fluxo normal do Miele.
 
-Não extraia nem altere manualmente o conteúdo do `.miele.zip`. Qualquer mudança no PDF, no manifesto ou no texto quebra as validações de integridade.
+Não extraia nem altere o conteúdo do `.miele.zip`. Qualquer mudança quebra as validações de integridade.
 
-## Google Drive
+## Segurança e retenção local
 
-O Drive pode ser usado como pasta sincronizada de entrada e como arquivo dos originais. A ferramenta local não precisa do token OAuth do Miele: o aplicativo Google Drive para computador realiza a sincronização.
+O `.miele.zip` contém o PDF original e o texto fiscal extraído, sem criptografia própria:
 
-O OCR embutido do Google Drive não é usado. O processamento permanece local, preservando confidencialidade e mantendo o Miele responsável por validação, confirmação e auditoria.
+- gere a saída somente em pasta corporativa com acesso restrito;
+- não envie pacotes por e-mail pessoal ou mensageiros não autorizados;
+- ao usar pasta sincronizada, confirme permissões e política da organização;
+- mantenha os pacotes somente pelo período necessário para importar e conferir;
+- após confirmação e arquivamento pelo Miele, elimine cópias locais conforme a política de retenção da empresa.
 
-## Segurança e limites
-
-- PDF original: até 10 MB e 100 páginas.
-- Pacote: até 49 PDFs e 50 MB de originais.
-- Texto extraído: até 2 MB por PDF e 10 MB por pacote.
-- ZIP traversal, links simbólicos, criptografia, itens extras e hashes divergentes são bloqueados.
-- O servidor recalcula os campos; não aceita valores financeiros prontos do computador local.
-- PDFs OCR sempre exigem autorização explícita e justificativa no Miele.
-- Retificadoras, versões anteriores e saldos continuam sendo decididos pelo backend.
+O OCR embutido do Google Drive não é usado. Uma pasta sincronizada pode servir como entrada ou saída, mas a sincronização é responsabilidade do aplicativo Google Drive do usuário.
 
 ## Solução de problemas
 
-**Nenhum ambiente Python com dependências OCR foi encontrado**
+**Python 3.11 não foi encontrado**
 
-Instale as dependências na `.venv` correta e repita. Não use uma `.venv-local` sem `pypdf`, `pypdfium2`, `rapidocr` e `onnxruntime`.
+O instalador não baixa Python sem autorização. Instale-o pelo site oficial ou execute o instalador PowerShell com `-InstallPythonWithWinget` se desejar usar `winget` explicitamente.
 
-**REVIEW: CNPJ titular não identificado**
+**Dependências OCR não foram encontradas**
 
-Confira se o PDF mostra o CNPJ principal e não apenas o CNPJ de um débito. Preserve o original e trate o documento manualmente quando necessário.
+Usuários operacionais devem executar novamente o instalador da distribuição oficial. Desenvolvedores devem recriar a `.venv-local` e instalar `requirements\ocr-local.txt`.
+
+**Nenhum pacote foi criado**
+
+Abra o `relatorio.csv`. PDFs corrompidos, acima dos limites ou sem CNPJ titular seguro não entram em pacote. Preserve o original e envie-o separadamente ao Miele para tratamento manual quando aplicável.
 
 **REVIEW com confiança alta**
 
-Confiança de OCR mede reconhecimento visual, não validade fiscal. O parser pode exigir revisão por período, valores conflitantes ou leiaute ainda não homologado.
+Confiança mede reconhecimento visual, não validade fiscal. O parser ainda pode exigir revisão por período, valores conflitantes ou leiaute não homologado.
 
 **O computador ficou lento**
 
-Interrompa após o arquivo atual e execute novamente com `-Workers 1`. Os originais não são modificados.
+Use um worker. O launcher instalado já usa essa configuração conservadora. Interromper uma execução não apaga nem modifica os PDFs originais, mas a versão atual não retoma automaticamente um lote interrompido.
 
-**O PDF funciona no parser, mas o envio direto expira**
+**O envio direto expira**
 
-PDFs em imagem com muitas páginas podem exceder o tempo seguro da instância online. Prepare somente esse arquivo com o comando da seção **Preparar uma pasta** e envie o `.miele.zip` criado pelo mesmo botão **Importar**. O resultado documental é o mesmo; o servidor confere novamente hashes, CNPJ e campos antes de permitir o registro.
+Prepare o PDF em imagem pelo Miele OCR Local e envie o `.miele.zip` pelo mesmo botão **Importar**. O backend continua responsável por validação, confirmação e auditoria.

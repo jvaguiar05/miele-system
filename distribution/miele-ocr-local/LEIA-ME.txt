@@ -1,0 +1,14 @@
+MIELE OCR LOCAL — INSTALAÇÃO PARA WINDOWS
+
+1. Extraia todo o conteúdo deste ZIP para uma pasta local.
+2. Execute Install-MieleOcrLocal.cmd.
+3. Autorize o download das dependências OCR quando solicitado.
+4. Abra “Miele OCR Local” pelo Menu Iniciar.
+
+O instalador usa somente o perfil atual e não exige administrador.
+Python 3.11 deve estar instalado. Nada será instalado silenciosamente: se o Python
+estiver ausente, o instalador mostrará as opções de instalação manual ou por winget.
+
+Os PDFs não são enviados à internet pela ferramenta. Os pacotes gerados contêm os
+originais e texto fiscal extraído; mantenha-os em pasta restrita e exclua-os quando a
+política de retenção da empresa permitir.

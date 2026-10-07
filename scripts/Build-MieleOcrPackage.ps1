@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string[]]$InputPath,
-    [string]$OutputDirectory = ".sandbox\miele-ocr-output",
+    [string]$OutputDirectory = (Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Miele OCR"),
     [ValidateRange(1, 4)]
     [int]$Workers = 1
 )
@@ -9,6 +9,8 @@ param(
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 $repository = Split-Path -Parent $PSScriptRoot
 $pythonCandidates = @(
     @{ Command = (Join-Path $repository ".venv\Scripts\python.exe"); Prefix = @(); Local = $true },

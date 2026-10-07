@@ -1,0 +1,6 @@
+# Dependências mínimas e reproduzíveis do Miele OCR Local para Python 3.11.
+# O instalador Windows usa somente este arquivo; não instala Django, banco ou Drive.
+pypdf==6.19.0
+pypdfium2==5.13.0
+rapidocr==3.9.2
+onnxruntime==1.30.0

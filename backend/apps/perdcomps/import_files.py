@@ -46,7 +46,7 @@ def extract_pdf(raw, ocr_page_budget=MAX_OCR_PAGES, timeout=165):
         )}
 
 
-def ingest(uploads):
+def ingest(uploads, ocr_quota=None, process=True):
     if not uploads or len(uploads) > MAX_FILES:
         raise ImportProblem("Selecione de 1 a 100 arquivos.")
     entries, total = [], 0
@@ -118,6 +118,8 @@ def ingest(uploads):
             entry["error"] = entry["error"] or ("Backup DBK não suportado." if suffix == ".dbk" else "Arquivo não PDF — ignorado.")
         elif not raw.startswith(b"%PDF-"):
             entry["error"] = entry["error"] or "Assinatura de PDF inválida."
+        if not process:
+            continue
         if not entry["error"]:
             if prepared:
                 entry["extraction"] = prepared["extraction"]
@@ -134,21 +136,31 @@ def ingest(uploads):
                     "seguro. Divida os arquivos restantes em um novo lote."
                 ))
             else:
+                ocr_budget = MAX_OCR_PAGES - ocr_pages
+                if ocr_quota is not None:
+                    ocr_budget = min(ocr_budget, ocr_quota.remaining)
                 extracted = extract_pdf(
                     raw,
-                    MAX_OCR_PAGES - ocr_pages,
+                    ocr_budget,
                     timeout=min(165, remaining),
                 )
                 if "error" in extracted:
-                    cache[entry["sha256"]] = (0, None, extracted["error"])
+                    error = extracted["error"]
+                    if extracted.get("ocr_quota_exceeded") and ocr_quota is not None:
+                        error = ocr_quota.exceeded_message(extracted.get("ocr_required_pages"))
+                        entry["ocr_quota_exceeded"] = True
+                    cache[entry["sha256"]] = (0, None, error)
                 else:
+                    executed_ocr_pages = int((extracted.get("ocr") or {}).get("pages", 0))
+                    if ocr_quota is not None and executed_ocr_pages:
+                        ocr_quota.record(executed_ocr_pages)
                     parsed = parse_pages(extracted["pages"])
                     parsed["text_source"] = extracted.get("text_source", "native")
                     parsed["ocr"] = extracted.get("ocr")
                     if parsed["text_source"] == "ocr" and parsed["status"] == "no_text":
                         parsed["issues"] = ["OCR não reconheceu texto suficiente para uma importação segura."]
                     cache[entry["sha256"]] = (len(extracted["pages"]), parsed, None)
-                    ocr_pages += int((extracted.get("ocr") or {}).get("pages", 0))
+                    ocr_pages += executed_ocr_pages
             entry["pages"], entry["extraction"], entry["error"] = cache[entry["sha256"]]
             pages += entry["pages"]
             if pages > 500:

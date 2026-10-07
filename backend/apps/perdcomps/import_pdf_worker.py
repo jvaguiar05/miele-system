@@ -119,7 +119,12 @@ def main():
         ocr_enabled = os.getenv("PERDCOMP_OCR_ENABLED", "true").lower() not in ("0", "false", "no")
         if needs_ocr and ocr_enabled:
             if len(needs_ocr) > ocr_budget:
-                raise ValueError(f"Lote excede o limite de {ocr_budget} páginas que necessitam OCR. Divida os arquivos em lotes menores.")
+                print(json.dumps({
+                    "error": "O PDF requer mais páginas OCR do que o saldo online disponível.",
+                    "ocr_quota_exceeded": True,
+                    "ocr_required_pages": len(needs_ocr),
+                }))
+                return
             scores = _ocr_pages(raw, pages, needs_ocr)
             if any(len(page) > 50000 for page in pages) or sum(map(len, pages)) > 1000000:
                 raise ValueError("OCR excedeu o limite de conteúdo extraível.")

@@ -19,6 +19,9 @@ env = environ.Env(
     SENTRY_DSN=(str, ""),
     SIMPLEJWT_ACCESS_MIN=(int, 15),
     SIMPLEJWT_REFRESH_DAYS=(int, 14),
+    PERDCOMP_OCR_OPERATION_PAGES=(int, 5),
+    PERDCOMP_OCR_USER_DAILY_PAGES=(int, 10),
+    PERDCOMP_OCR_GLOBAL_DAILY_PAGES=(int, 40),
 )
 
 ENV_FILE = BASE_DIR.parent / ".env"
@@ -416,6 +419,12 @@ GDRIVE_API_TIMEOUT = env("GDRIVE_API_TIMEOUT", default=30, cast=int)  # seconds
 
 # Google Drive rate limiting
 GDRIVE_REQUESTS_PER_MINUTE = env("GDRIVE_REQUESTS_PER_MINUTE", default=600, cast=int)
+
+# Online OCR is a deliberately small fallback for the constrained web process.
+# Larger scans should use the offline Miele OCR package workflow.
+PERDCOMP_OCR_OPERATION_PAGES = env.int("PERDCOMP_OCR_OPERATION_PAGES", default=5)
+PERDCOMP_OCR_USER_DAILY_PAGES = env.int("PERDCOMP_OCR_USER_DAILY_PAGES", default=10)
+PERDCOMP_OCR_GLOBAL_DAILY_PAGES = env.int("PERDCOMP_OCR_GLOBAL_DAILY_PAGES", default=40)
 
 # BrasilAPI CNPJ integration
 BRASILAPI_CNPJ_BASE_URL = env(

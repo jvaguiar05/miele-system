@@ -1,4 +1,5 @@
 import copy
+from datetime import date
 import hashlib
 import io
 import json
@@ -28,7 +29,8 @@ from .financial import operational_balance
 from .import_storage import standardized_drive_name
 from .document_models import (ImportedDocument, ImportedFile, DocumentaryCredit, DocumentDebt,
     DocumentCreditComponent, DocumentRelation, ImportBatch, DocumentReview, DocumentUtilization)
-from .document_models import ManualImportIssue
+from .document_models import ManualImportIssue, OcrDailyUsage
+from .ocr_quota import reserve_online_ocr, finalize_online_ocr
 from .models import PerDcomp
 
 CNPJ = "19.818.301/0001-55"
@@ -226,6 +228,31 @@ def local_ocr_package(text=None, manifest_cnpj=CNPJ, expected_sha=None, extra_me
         if extra_member:
             archive.writestr("nao-declarado.txt", b"blocked")
     return content.getvalue()
+
+
+def online_ocr_result(required_pages=1, text=None):
+    text = text or receipt()
+
+    def run(raw, ocr_page_budget, timeout=165):
+        if required_pages > ocr_page_budget:
+            return {
+                "error": "quota",
+                "ocr_quota_exceeded": True,
+                "ocr_required_pages": required_pages,
+            }
+        return {
+            "pages": [text] * required_pages,
+            "text_source": "ocr",
+            "ocr": {
+                "engine": "rapidocr-test",
+                "pages": required_pages,
+                "recognized_pages": required_pages,
+                "confidence": 0.99,
+                "minimum_confidence": 0.98,
+            },
+        }
+
+    return run
 
 
 class ParserTests(SimpleTestCase):
@@ -521,6 +548,185 @@ class ImportTests(TestCase):
         protocols = selected or list({digits(e["extraction"]["fields"]["protocol"]) for e in entries})
         return publish(self.customer, entries, protocols, [], self.admin, reason,
             financial_confirmed=protocols)
+
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=10, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=40)
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_online_ocr_per_operation_limit_rejects_only_excess_file(self, extractor):
+        extractor.side_effect = online_ocr_result(required_pages=2)
+        quota = reserve_online_ocr(self.employee)
+        try:
+            rows = ingest([
+                SimpleUploadedFile("one.pdf", pdf(receipt())),
+                SimpleUploadedFile("two.pdf", pdf(receipt(protocol=P2))),
+                SimpleUploadedFile("three.pdf", pdf(receipt(protocol=P3))),
+            ], ocr_quota=quota)
+        finally:
+            snapshot = finalize_online_ocr(quota)
+
+        self.assertEqual([row["extraction"]["status"] for row in rows[:2]], ["ready", "ready"])
+        self.assertEqual(rows[2]["extraction"]["status"], "rejected")
+        self.assertIn("Miele OCR Local", rows[2]["error"])
+        self.assertIn("Consumo hoje", rows[2]["error"])
+        self.assertIn("renova em", rows[2]["error"])
+        self.assertEqual(snapshot["per_operation_limit"], 5)
+        self.assertEqual(snapshot["user_used"], 4)
+        self.assertEqual(snapshot["global_used"], 4)
+        self.assertFalse(snapshot["best_effort"])
+
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=3, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=4)
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_online_ocr_enforces_user_and_global_daily_limits(self, extractor):
+        extractor.side_effect = online_ocr_result(required_pages=3)
+        first = reserve_online_ocr(self.employee)
+        try:
+            ingest([SimpleUploadedFile("first.pdf", pdf(receipt()))], ocr_quota=first)
+        finally:
+            first_snapshot = finalize_online_ocr(first)
+        self.assertEqual(first_snapshot["user_remaining"], 0)
+        self.assertEqual(first_snapshot["global_remaining"], 1)
+
+        extractor.side_effect = online_ocr_result(required_pages=1)
+        exhausted = reserve_online_ocr(self.employee)
+        try:
+            row = ingest([SimpleUploadedFile("blocked.pdf", pdf(receipt()))], ocr_quota=exhausted)[0]
+        finally:
+            exhausted_snapshot = finalize_online_ocr(exhausted)
+        self.assertEqual(row["extraction"]["status"], "rejected")
+        self.assertEqual(exhausted_snapshot["user_used"], 3)
+
+        other = reserve_online_ocr(self.admin)
+        try:
+            ingest([SimpleUploadedFile("last.pdf", pdf(receipt()))], ocr_quota=other)
+        finally:
+            other_snapshot = finalize_online_ocr(other)
+        self.assertEqual(other_snapshot["global_used"], 4)
+        self.assertEqual(other_snapshot["global_remaining"], 0)
+
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=10, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=40)
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_native_and_local_package_do_not_consume_online_quota(self, extractor):
+        extractor.side_effect = [{"pages": [receipt()], "text_source": "native", "ocr": None}]
+        quota = reserve_online_ocr(self.employee)
+        try:
+            rows = ingest([
+                SimpleUploadedFile("native.pdf", pdf(receipt())),
+                SimpleUploadedFile("local.miele.zip", local_ocr_package()),
+            ], ocr_quota=quota)
+        finally:
+            snapshot = finalize_online_ocr(quota)
+
+        self.assertEqual(len(rows), 2)
+        extractor.assert_called_once()
+        self.assertEqual(snapshot["user_used"], 0)
+        self.assertEqual(snapshot["global_used"], 0)
+        usage = OcrDailyUsage.objects.get()
+        self.assertEqual(usage.global_pages, 0)
+        self.assertEqual(usage.per_user[str(self.employee.pk)], 0)
+
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=10, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=40)
+    def test_online_ocr_daily_row_resets_by_local_date_and_refunds_snapshot(self):
+        with patch("apps.perdcomps.ocr_quota.timezone.localdate", return_value=date(2026, 10, 7)):
+            first = reserve_online_ocr(self.employee)
+            first.record(2)
+            first_snapshot = finalize_online_ocr(first)
+        first_row = OcrDailyUsage.objects.get(usage_date=date(2026, 10, 7))
+        self.assertEqual(first_row.global_pages, 2)
+        self.assertEqual(first_row.per_user[str(self.employee.pk)], 2)
+        self.assertEqual(first_snapshot["user_used"], 2)
+        self.assertTrue(first_snapshot["reset_at"].startswith("2026-10-08T00:00:00"))
+
+        with patch("apps.perdcomps.ocr_quota.timezone.localdate", return_value=date(2026, 10, 8)):
+            second = reserve_online_ocr(self.employee)
+            second_snapshot = finalize_online_ocr(second)
+        self.assertEqual(second_snapshot["user_used"], 0)
+        self.assertEqual(second_snapshot["global_used"], 0)
+        self.assertEqual(OcrDailyUsage.objects.count(), 2)
+
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=10, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=40)
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_preview_and_confirm_report_each_online_ocr_execution(self, extractor):
+        extractor.side_effect = online_ocr_result(required_pages=1)
+        api = APIClient(); api.force_authenticate(self.employee)
+        base = f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/"
+        payload = pdf(receipt())
+        preview = api.post(base + "preview/", {
+            "files": SimpleUploadedFile("scan.pdf", payload),
+        }, format="multipart")
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data["ocr_quota"]["user_used"], 1)
+        self.assertEqual(preview.data["ocr_quota"]["global_used"], 1)
+
+        confirmed = api.post(base + "confirm/", {
+            "files": SimpleUploadedFile("scan.pdf", payload),
+            "token": preview.data["token"],
+            "selected": json.dumps([digits(P1)]),
+            "ocr_confirmed": json.dumps([digits(P1)]),
+            "reason": "OCR online conferido diretamente no documento original.",
+        }, format="multipart")
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        self.assertEqual(confirmed.data["ocr_quota"]["user_used"], 2)
+        self.assertEqual(confirmed.data["ocr_quota"]["global_used"], 2)
+
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_preview_file_validates_original_without_running_ocr(self, extractor):
+        api = APIClient(); api.force_authenticate(self.employee)
+        raw = pdf()
+        response = api.post(
+            f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/preview-file/",
+            {
+                "files": SimpleUploadedFile("scan.pdf", raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+        extractor.assert_not_called()
+        self.assertEqual(OcrDailyUsage.objects.count(), 0)
+
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=0, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=40)
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_exhausted_ocr_quota_keeps_native_file_in_mixed_batch(self, extractor):
+        extractor.side_effect = [
+            {
+                "error": "quota",
+                "ocr_quota_exceeded": True,
+                "ocr_required_pages": 1,
+            },
+            {"pages": [receipt()], "text_source": "native", "ocr": None},
+        ]
+        quota = reserve_online_ocr(self.employee)
+        try:
+            rows = ingest([
+                SimpleUploadedFile("scan.pdf", pdf()),
+                SimpleUploadedFile("native.pdf", pdf(receipt())),
+            ], ocr_quota=quota)
+        finally:
+            snapshot = finalize_online_ocr(quota)
+
+        self.assertEqual([row["extraction"]["status"] for row in rows], ["rejected", "ready"])
+        self.assertEqual(snapshot["user_used"], 0)
+        self.assertIn("Miele OCR Local", rows[0]["error"])
+
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=0, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=40)
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_quota_error_response_includes_snapshot_and_action(self, extractor):
+        extractor.side_effect = online_ocr_result(required_pages=1)
+        api = APIClient(); api.force_authenticate(self.employee)
+        response = api.post("/api/v1/perdcomps/import/preview/", {
+            "files": SimpleUploadedFile("scan.pdf", pdf()),
+        }, format="multipart")
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Miele OCR Local", response.data["detail"])
+        self.assertEqual(response.data["ocr_quota"]["user_remaining"], 0)
+        self.assertEqual(response.data["ocr_quota"]["global_remaining"], 40)
 
     def test_pair_becomes_single_document(self):
         entries = [entry(demo()), entry(receipt(), index=1)]
@@ -1221,6 +1427,49 @@ class LocalCorpusGroupingTests(TestCase):
             counts.append((len(matching), len(preview["groups"])))
         self.assertEqual(sum(n for n, _ in counts), 36)
         self.assertEqual(sum(n for _, n in counts), 19)
+
+
+class OcrQuotaTransactionTests(TransactionTestCase):
+    @override_settings(PERDCOMP_OCR_OPERATION_PAGES=5,
+        PERDCOMP_OCR_USER_DAILY_PAGES=10, PERDCOMP_OCR_GLOBAL_DAILY_PAGES=5)
+    def test_concurrent_reservations_never_exceed_global_snapshot(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from django.db import close_old_connections, OperationalError
+
+        users = [
+            get_user_model().objects.create_user(username=f"quota-{index}",
+                email=f"quota-{index}@example.test", role="employee", approval_status="approved")
+            for index in range(2)
+        ]
+        barrier = Barrier(2)
+
+        def attempt(user_id):
+            close_old_connections()
+            try:
+                user = get_user_model().objects.get(pk=user_id)
+                barrier.wait(timeout=10)
+                return reserve_online_ocr(user)
+            except OperationalError:
+                return "retry"
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = [future.result(timeout=20) for future in (
+                pool.submit(attempt, users[0].pk),
+                pool.submit(attempt, users[1].pk),
+            )]
+        reservations = []
+        for user, outcome in zip(users, outcomes):
+            reservations.append(reserve_online_ocr(user) if outcome == "retry" else outcome)
+        for reservation in reservations:
+            reservation.record(reservation.reserved_pages)
+            finalize_online_ocr(reservation)
+
+        usage = OcrDailyUsage.objects.get()
+        self.assertLessEqual(sum(reservation.actual_pages for reservation in reservations), 5)
+        self.assertEqual(usage.global_pages, 5)
 
 
 class ConcurrentImportTests(TransactionTestCase):

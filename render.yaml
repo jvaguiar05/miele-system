@@ -34,6 +34,12 @@ services:
         value: "14"
       - key: DB_CONN_MAX_AGE
         value: "60"
+      - key: PERDCOMP_OCR_OPERATION_PAGES
+        value: "5"
+      - key: PERDCOMP_OCR_USER_DAILY_PAGES
+        value: "10"
+      - key: PERDCOMP_OCR_GLOBAL_DAILY_PAGES
+        value: "40"
 
       - key: CORS_ALLOW_ALL_ORIGINS
         value: "true"

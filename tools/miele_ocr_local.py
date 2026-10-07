@@ -29,15 +29,35 @@ from apps.perdcomps.ocr_package import (  # noqa: E402
     EXTRACTION_SCHEMA,
     MANIFEST_NAME,
     MAX_EXTRACTION_SIZE,
+    MAX_EXTRACTION_TOTAL,
     MAX_PACKAGE_FILES,
     MAX_PDF_SIZE,
     SCHEMA,
     SCHEMA_VERSION,
+    load_ocr_package,
 )
 
 
 TOOL_VERSION = "1.0.0"
 PACKAGE_TARGET_BYTES = 45 * 1024 * 1024
+PACKAGE_MAX_PAGES = 500
+DEFAULT_OUTPUT = Path.home() / "Documents" / "Miele OCR"
+
+
+def bounded_int(minimum, maximum):
+    """Argparse validator with a compact help message."""
+    def parse(value):
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise argparse.ArgumentTypeError("informe um número inteiro") from None
+        if not minimum <= parsed <= maximum:
+            raise argparse.ArgumentTypeError(
+                f"informe um valor entre {minimum} e {maximum}"
+            )
+        return parsed
+
+    return parse
 
 
 def safe_name(value):
@@ -123,14 +143,22 @@ def process_pdf(path, ocr_pages, timeout, staging):
 
 
 def chunks_for(files):
-    chunk, size = [], 0
+    chunk, size, pages, extraction_size = [], 0, 0, 0
     for item in sorted(files, key=lambda value: (value["protocol"], value["name"], value["sha256"])):
-        item_size = item["size"] + item["extraction_file"].stat().st_size
-        if chunk and (len(chunk) >= MAX_PACKAGE_FILES or size + item_size > PACKAGE_TARGET_BYTES):
+        item_extraction_size = item["extraction_file"].stat().st_size
+        item_size = item["size"] + item_extraction_size
+        if chunk and (
+            len(chunk) >= MAX_PACKAGE_FILES
+            or size + item_size > PACKAGE_TARGET_BYTES
+            or pages + item["pages"] > PACKAGE_MAX_PAGES
+            or extraction_size + item_extraction_size > MAX_EXTRACTION_TOTAL
+        ):
             yield chunk
-            chunk, size = [], 0
+            chunk, size, pages, extraction_size = [], 0, 0, 0
         chunk.append(item)
         size += item_size
+        pages += item["pages"]
+        extraction_size += item_extraction_size
     if chunk:
         yield chunk
 
@@ -169,6 +197,14 @@ def write_package(destination, cnpj, part, files, created_at):
         for item in files:
             archive.write(item["source"], item["package_pdf_path"])
             archive.write(item["extraction_file"], item["package_extraction_path"])
+    try:
+        with zipfile.ZipFile(path) as archive:
+            validated = load_ocr_package(archive)
+        if len(validated) != len(files):
+            raise ValueError("A validação final retornou uma quantidade divergente de PDFs.")
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
     return path, package_id
 
 
@@ -205,12 +241,19 @@ def write_reports(run_root, results, packages, created_at):
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Prepara lotes OCR auditáveis para importação no Miele.")
     parser.add_argument("inputs", nargs="+", help="PDF(s) ou pasta(s) de entrada.")
-    parser.add_argument("--output", default=str(REPOSITORY / ".sandbox" / "miele-ocr-output"))
-    parser.add_argument("--workers", type=int, choices=range(1, 5), default=1)
-    parser.add_argument("--ocr-pages", type=int, choices=range(1, 101), default=100)
-    parser.add_argument("--timeout", type=int, choices=range(60, 1801), default=900)
+    parser.add_argument("-o", "--output", default=str(DEFAULT_OUTPUT),
+                        help=f"Pasta de saída (padrão: {DEFAULT_OUTPUT}).")
+    parser.add_argument("-w", "--workers", type=bounded_int(1, 4), default=1,
+                        metavar="1-4", help="Processos simultâneos (padrão: 1).")
+    parser.add_argument("--ocr-pages", type=bounded_int(1, 100), default=100,
+                        metavar="1-100", help="Máximo de páginas OCR por PDF (padrão: 100).")
+    parser.add_argument("--timeout", type=bounded_int(60, 1800), default=900,
+                        metavar="60-1800", help="Tempo máximo por PDF, em segundos (padrão: 900).")
     args = parser.parse_args(argv)
 
     missing = [name for name in ("pypdf", "pypdfium2", "rapidocr", "onnxruntime")
@@ -285,9 +328,19 @@ def main(argv=None):
         write_reports(run_root, sorted(results, key=lambda item: item["name"].lower()), package_report, created.isoformat())
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    print(f"Concluído. Saída: {run_root}")
-    print(f"Pacotes: {len(package_report)} | Revisão: {sum(item['status'] == 'review' for item in results)} | Duplicados: {sum(item['status'] == 'duplicate' for item in results)}")
-    return 0
+    ready = sum(item["status"] == "ready" for item in results)
+    review = sum(item["status"] == "review" for item in results)
+    duplicates = sum(item["status"] == "duplicate" for item in results)
+    omitted = sum(not item.get("cnpj") and item["status"] != "duplicate" for item in results)
+    print("\nResumo do Miele OCR Local")
+    print(f"  PDFs encontrados: {len(results)} | Prontos: {ready} | Revisão: {review}")
+    print(f"  Duplicados: {duplicates} | Sem pacote: {omitted} | Pacotes: {len(package_report)}")
+    print(f"  Relatórios: {run_root}")
+    if package_report:
+        print(f"  Pacotes para importar: {package_root}")
+        return 0
+    print("Nenhum pacote foi criado. Consulte relatorio.csv antes de tentar novamente.", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
