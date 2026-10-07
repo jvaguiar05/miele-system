@@ -28,7 +28,13 @@ def digest(value):
 
 
 def manifest(entries, changes):
-    return digest({"files": sorted((e["sha256"], e["name"]) for e in entries), "changes": changes, "parser": VERSION})
+    # Confirmation reparses the uploaded bytes. Bind the signed preview to the
+    # interpreted result too, so OCR cannot replace what the user reviewed.
+    files = sorted(
+        (e["sha256"], e["name"], digest(e.get("extraction")))
+        for e in entries
+    )
+    return digest({"files": files, "changes": changes, "parser": VERSION})
 
 
 def apply_reviews(entries, changes, user):

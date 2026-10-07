@@ -471,6 +471,22 @@ class FileTests(SimpleTestCase):
         with self.assertRaises(ImportProblem):
             ingest([SimpleUploadedFile("x.pdf", b"x")] * 101)
 
+    @patch("apps.perdcomps.import_files.time.monotonic", side_effect=[0, 0, 171, 172])
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_global_time_budget_rejects_remaining_files_without_losing_valid_ones(
+            self, extractor, monotonic):
+        extractor.return_value = {"pages": [receipt()], "text_source": "native", "ocr": None}
+        rows = ingest([
+            SimpleUploadedFile("first.pdf", pdf(receipt())),
+            SimpleUploadedFile("second.pdf", pdf(receipt(protocol=P2))),
+            SimpleUploadedFile("third.pdf", pdf(receipt(protocol=P3))),
+        ])
+
+        self.assertEqual(rows[0]["extraction"]["status"], "ready")
+        self.assertEqual([row["extraction"]["status"] for row in rows[1:]], ["rejected", "rejected"])
+        self.assertTrue(all("tempo seguro" in row["error"] for row in rows[1:]))
+        extractor.assert_called_once()
+
     @patch("apps.perdcomps.import_files.extract_pdf")
     def test_local_ocr_package_reuses_text_and_preserves_original(self, extractor):
         package = local_ocr_package()
@@ -729,6 +745,12 @@ class ImportTests(TestCase):
         issue.refresh_from_db()
         self.assertEqual(issue.operational_document_id, operational.pk)
         self.assertEqual(issue.status, ManualImportIssue.Status.RESOLVED)
+        repeated = api.post(base + "resolve/", {"action": "dismissed",
+            "note": "Tentativa concorrente de descartar a mesma pendência."}, format="json")
+        self.assertEqual(repeated.status_code, 409, repeated.data)
+        issue.refresh_from_db()
+        self.assertEqual(issue.operational_document_id, operational.pk)
+        self.assertEqual(issue.status, ManualImportIssue.Status.RESOLVED)
 
     def test_atomic_failure(self):
         with patch("apps.perdcomps.import_service.resolve_references", side_effect=RuntimeError("failure")):
@@ -736,6 +758,28 @@ class ImportTests(TestCase):
                 self.save([entry(demo())])
         self.assertEqual(ImportBatch.objects.count(), 0)
         self.assertEqual(ImportedFile.objects.count(), 0)
+
+    def test_manual_resolution_and_audit_are_atomic(self):
+        invalid = entry("imagem sem texto suficiente")
+        invalid["raw"] = pdf()
+        invalid["sha256"] = hashlib.sha256(invalid["raw"]).hexdigest()
+        publish(self.customer, [invalid], [], [], self.admin, "", [invalid["sha256"]])
+        issue = ManualImportIssue.objects.get()
+        operational = PerDcomp.objects.create(client_id=self.customer.pk, created_by_id=self.admin.pk,
+            cnpj=CNPJ, numero_perdcomp="MANUAL-ATOMIC", tributo_pedido="COFINS", valor_pedido="100.00")
+        api = APIClient(); api.force_authenticate(self.admin)
+        url = (f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/manual/"
+               f"{issue.public_id}/resolve/")
+
+        with patch("apps.perdcomps.import_views.AuditService.log_action", side_effect=RuntimeError("audit failure")):
+            response = api.post(url, {"action": "resolved", "operational_id": str(operational.public_id),
+                "note": "Cadastro manual conferido com o PDF original."}, format="json")
+
+        self.assertEqual(response.status_code, 500)
+        issue.refresh_from_db()
+        self.assertEqual(issue.status, ManualImportIssue.Status.PENDING)
+        self.assertIsNone(issue.operational_document_id)
+        self.assertIsNone(issue.resolved_by_id)
 
     def test_database_constraints_protect_identity_and_file(self):
         self.save([entry(demo())])
@@ -1003,6 +1047,31 @@ class ImportTests(TestCase):
         base = f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/"
         response = api.post(base + "confirm/", {"token": "forged"}, format="multipart")
         self.assertEqual(response.status_code, 400)
+
+    @patch("apps.perdcomps.import_files.extract_pdf")
+    def test_confirm_rejects_extraction_that_differs_from_preview(self, extractor):
+        extractor.side_effect = [
+            {"pages": [receipt()], "text_source": "native", "ocr": None},
+            {"pages": [receipt().replace("1.000,00", "2.000,00")],
+             "text_source": "native", "ocr": None},
+        ]
+        api = APIClient(); api.force_authenticate(self.employee)
+        base = f"/api/v1/clients/{self.customer.public_id}/perdcomp-imports/"
+        payload = pdf(receipt())
+        preview = api.post(base + "preview/", {
+            "files": SimpleUploadedFile("receipt.pdf", payload),
+        }, format="multipart")
+        self.assertEqual(preview.status_code, 200, preview.data)
+
+        confirmed = api.post(base + "confirm/", {
+            "files": SimpleUploadedFile("receipt.pdf", payload),
+            "token": preview.data["token"],
+            "selected": json.dumps([digits(P1)]),
+        }, format="multipart")
+
+        self.assertEqual(confirmed.status_code, 400, confirmed.data)
+        self.assertIn("Arquivos ou corre", confirmed.data["detail"])
+        self.assertEqual(ImportBatch.objects.count(), 0)
 
     @override_settings(GDRIVE_CLIENT_ID="test", GDRIVE_CLIENT_SECRET="test", GDRIVE_REFRESH_TOKEN="test", GDRIVE_PERDCOMPS_FOLDER_ID="test-folder")
     def test_drive_failure_preserves_original_and_retry_does_not_duplicate(self):

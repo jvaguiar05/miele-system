@@ -17,6 +17,7 @@ MAX_FILES = 100
 MAX_FILE = 10 * 1024 * 1024
 MAX_TOTAL = 50 * 1024 * 1024
 MAX_OCR_PAGES = 20
+MAX_PROCESSING_SECONDS = 170
 
 
 class ImportProblem(ValueError):
@@ -124,10 +125,20 @@ def ingest(uploads):
                 if pages > 500:
                     raise ImportProblem("Lote excede 500 páginas. Divida-o em lotes menores.")
                 continue
-            if time.monotonic() - start > 170:
-                raise ImportProblem("Lote excedeu o tempo seguro de processamento. Divida-o em lotes menores.")
-            if entry["sha256"] not in cache:
-                extracted = extract_pdf(raw, MAX_OCR_PAGES - ocr_pages)
+            remaining = MAX_PROCESSING_SECONDS - (time.monotonic() - start)
+            if entry["sha256"] in cache:
+                pass
+            elif remaining <= 0:
+                cache[entry["sha256"]] = (0, None, (
+                    "Este arquivo não foi processado porque o lote atingiu o tempo "
+                    "seguro. Divida os arquivos restantes em um novo lote."
+                ))
+            else:
+                extracted = extract_pdf(
+                    raw,
+                    MAX_OCR_PAGES - ocr_pages,
+                    timeout=min(165, remaining),
+                )
                 if "error" in extracted:
                     cache[entry["sha256"]] = (0, None, extracted["error"])
                 else:

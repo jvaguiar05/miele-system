@@ -2,7 +2,7 @@ import io
 import json
 
 from django.core import signing
-from django.db import IntegrityError, OperationalError
+from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import F, Prefetch, Value
 from django.db.models.functions import Replace
 from django.utils import timezone
@@ -425,12 +425,18 @@ def manual_original(request, client_id, issue_id):
 
 @api_view(["POST"])
 @permission_classes([IsEmployeeOrAdmin])
+@transaction.atomic
 def resolve_manual(request, client_id, issue_id):
     if request.user.role != "admin":
         return Response({"detail": "Somente administradores podem concluir pendências manuais."}, status=403)
     client = client_for(client_id)
-    issue = get_object_or_404(ManualImportIssue, client=client, public_id=issue_id,
-        status=ManualImportIssue.Status.PENDING)
+    issue = get_object_or_404(
+        ManualImportIssue.objects.select_for_update(),
+        client=client,
+        public_id=issue_id,
+    )
+    if issue.status != ManualImportIssue.Status.PENDING:
+        return Response({"detail": "Esta pendência manual já foi concluída."}, status=409)
     note = str(request.data.get("note", "")).strip()
     if len(note) < 10 or len(note) > 2000:
         return Response({"detail": "Informe uma justificativa de 10 a 2.000 caracteres."}, status=400)
