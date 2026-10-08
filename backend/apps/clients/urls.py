@@ -16,6 +16,7 @@ urlpatterns = [
     path("<uuid:client_id>/perdcomp-imports/confirm/", import_views.confirm),
     path("<uuid:client_id>/perdcomp-imports/preview-file/", import_views.preview_file),
     path("<uuid:client_id>/perdcomp-imports/documents/", import_views.documents),
+    path("<uuid:client_id>/perdcomp-imports/credit-chain/", import_views.credit_chain),
     path("<uuid:client_id>/perdcomp-imports/reprocess/preview/", import_views.reprocess_preview),
     path("<uuid:client_id>/perdcomp-imports/reprocess/confirm/", import_views.reprocess_confirm),
     path("<uuid:client_id>/perdcomp-imports/sync-drive/", import_views.sync_drive),

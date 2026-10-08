@@ -27,6 +27,7 @@ from .serializers import (
     PerDcompAnnotationSerializer,
 )
 from .services import PerDcompExcelExporter
+from .documentary_detail import build_perdcomp_documentary_detail
 
 
 class PingView(APIView):
@@ -239,6 +240,12 @@ class PerDcompViewSet(AutoApprovalFieldsMixin, viewsets.ModelViewSet):
         instance.deleted_at = timezone.now()
         instance.is_active = False
         instance.save()
+
+    @action(detail=True, methods=["get"], url_path="documentary")
+    def documentary(self, request, public_id=None):
+        """Return import evidence without changing the operational PER/DCOMP."""
+        return Response(build_perdcomp_documentary_detail(self.get_object()))
+
     @extend_schema(
         tags=["PER/DCOMPs"],
         summary="Atualizar campos sensíveis do PER/DCOMP",

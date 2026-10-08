@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
 from apps.clients.models import Client
-from apps.identity.permissions import IsEmployeeOrAdmin
+from apps.identity.permissions import IsApprovedUserWithRoleAccess, IsEmployeeOrAdmin
 from common.audit.services import AuditService
 from .document_models import ImportedDocument, ImportedFile, ManualImportIssue
 from .models import PerDcomp
@@ -33,6 +33,7 @@ from .import_storage import (
 )
 from .import_parser import digits, valid_cnpj
 from .ocr_quota import reserve_online_ocr, finalize_online_ocr
+from .credit_chain import build_credit_chain_report
 
 SALT = "miele.perdcomp.documentary.preview.v1"
 REPROCESS_SALT = "miele.perdcomp.reprocess.preview.v1"
@@ -387,6 +388,13 @@ def documents(request, client_id):
             "storage": "drive" if issue.drive_file_id and issue.database_released_at else
                 "transition" if issue.drive_file_id else "database"}
             for issue in pending], "storage": client_storage_summary(client)})
+
+
+@api_view(["GET"])
+@permission_classes([IsApprovedUserWithRoleAccess])
+def credit_chain(request, client_id):
+    """Expose documentary links without deriving or changing a financial balance."""
+    return Response(build_credit_chain_report(client_for(client_id)))
 
 
 @api_view(["GET"])
